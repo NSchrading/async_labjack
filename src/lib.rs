@@ -1,3 +1,5 @@
+use std::cmp;
+use std::ffi::CString;
 use std::io::Read;
 use std::marker::PhantomData;
 use tokio_modbus::client::{Context, Writer};
@@ -18,6 +20,20 @@ fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
         u16::from_be_bytes([bytes[0], bytes[1]]),
         u16::from_be_bytes([bytes[2], bytes[3]]),
     ]
+}
+
+fn u16_to_u8_vec(input: Vec<u16>) -> Vec<u8> {
+    input
+        .iter()
+        .flat_map(|x| x.to_be_bytes().to_vec())
+        .collect()
+}
+
+fn u8_to_u16_vec(input: Vec<u8>) -> Vec<u16> {
+    input
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect()
 }
 
 pub struct CanRead;
@@ -137,9 +153,76 @@ impl<R> LabjackTag<u16, R, CanWrite> {
     }
 }
 
+impl<W> LabjackTag<Vec<u8>, CanRead, W> {
+    pub async fn read(self, context: &mut Context, len: u32) -> Vec<u8> {
+        // fetch the data, it is returned in big endian
+        let mut register_count = ((len + 1) / 2) as u16;
+
+        let MAX_REGISTERS = 127;
+        let mut data_bytes: Vec<u8> = Vec::new();
+
+        while register_count > 0 {
+            println!("loop!");
+            let num_registers_to_read = cmp::min(register_count, MAX_REGISTERS);
+            let data: Vec<u16> = context
+                .read_holding_registers(self.address, num_registers_to_read)
+                .await
+                .unwrap()
+                .unwrap();
+            data_bytes.extend_from_slice(&u16_to_u8_vec(data));
+            register_count -= num_registers_to_read;
+        }
+        if len % 2 != 0 {
+            data_bytes.pop();
+        }
+        data_bytes
+    }
+
+    pub async fn read_string(self, context: &mut Context, len: u32) -> String {
+        let bytes = self.read(context, len).await;
+        CString::from_vec_with_nul(bytes)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .into()
+    }
+
+    pub async fn read_file(self, context: &mut Context, len: u32) -> String {
+        let bytes = self.read(context, len).await;
+        String::from_utf8(bytes).unwrap()
+    }
+}
+
+impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
+    pub async fn write(self, context: &mut Context, val: Vec<u8>) -> () {
+        // fetch the data, it is returned in big endian
+        context
+            .write_multiple_registers(self.address, &u8_to_u16_vec(val))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+}
+
 pub const AIN0: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
+pub const AIN1: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(2);
 pub const TEST: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(55100);
 pub const TEST_UINT16: LabjackTag<u16, CanRead, CanWrite> = LabjackTag::new(55110);
 pub const TEST_UINT32: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(55120);
 pub const TEST_INT32: LabjackTag<i32, CanRead, CanWrite> = LabjackTag::new(55122);
 pub const TEST_FLOAT32: LabjackTag<f32, CanRead, CanWrite> = LabjackTag::new(55124);
+
+pub const FILE_IO_DIR_CURRENT: LabjackTag<u16, CannotRead, CanWrite> = LabjackTag::new(60601);
+pub const FILE_IO_PATH_READ_LEN_BYTES: LabjackTag<u32, CanRead, CannotWrite> =
+    LabjackTag::new(60642);
+pub const FILE_IO_PATH_READ: LabjackTag<Vec<u8>, CanRead, CannotWrite> = LabjackTag::new(60652);
+
+pub const FILE_IO_PATH_WRITE_LEN_BYTES: LabjackTag<u32, CannotRead, CanWrite> =
+    LabjackTag::new(60640);
+pub const FILE_IO_PATH_WRITE: LabjackTag<Vec<u8>, CannotRead, CanWrite> = LabjackTag::new(60650);
+pub const FILE_IO_OPEN: LabjackTag<u16, CannotRead, CanWrite> = LabjackTag::new(60620);
+pub const FILE_IO_READ: LabjackTag<Vec<u8>, CanRead, CannotWrite> = LabjackTag::new(60656);
+pub const FILE_IO_SIZE_BYTES: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(60628);
+pub const FILE_IO_CLOSE: LabjackTag<u16, CannotRead, CanWrite> = LabjackTag::new(60621);
+
+pub const FILE_IO_DIR_FIRST: LabjackTag<u16, CannotRead, CanWrite> = LabjackTag::new(60610);
