@@ -1,3 +1,7 @@
 /target
+/coverage
+lcov.info
 .cargo-ok
 .DS_Store
+src/ljm_constants/target
+Cargo.lock

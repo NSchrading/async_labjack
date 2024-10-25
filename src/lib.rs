@@ -1,145 +1,115 @@
-use std::io::Read;
-use std::marker::PhantomData;
-use tokio_modbus::client::{Context, Writer};
-use tokio_modbus::prelude::Reader;
-use tokio_modbus::Result;
+/*!
+This crate is a pure rust async library to communicate with LabJack T-series devices. It is
+completely standalone and does not require [LJM](https://support.labjack.com/docs/ljm-library-overview).
 
-pub enum LabjackType {
-    UINT16 = 0,
-    UINT32 = 1,
-    INT32 = 2,
-    FLOAT32 = 3,
-    LJM_STRING = 98,
-    LJM_BYTE = 99,
+It differentiates itself from `LJM` and other available labjack crates in the rust ecosystem in the
+following ways:
+
+* Pure rust. This is not an FFI binding to `LJM`. Instead it uses the
+  [direct modbus TCP](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp) interface
+  of the LabJack.
+
+* Does not require `LJM` installed on your system. As long as you can establish a tcp connection to
+  your LabJack, you can use this library to work with your LabJack.
+
+* Asynchronous.
+
+* Strongly-typed. All registers (tags) that are available on the LabJack have types and read/write
+  specifications in this library. The rust compiler will prevent issues where, for example, you may
+  be attempting to read a write-only register or get a floating point value from a u32 register.
+  This will prevent issues at compile time, rather than waiting to get back errors from the LabJack
+  response at runtime.
+
+* All labjack registers and error codes are defined as constants in this library.
+  See [`crate::labjack::all_tags`] and [`crate::labjack::errors`]. When a labjack error occurs,
+  all functions in this library will attempt to return the descriptive error from the
+  `LAST_ERR_DETAIL` register, which you can match on via the `LabjackErrorCode` enum.
+
+* TCP-only. This library does not support USB connections to the LabJack.
+
+## Example
+
+Many complete examples, including for streaming, can be found in the examples/ directory.
+
+```rust
+use async_labjack::client::LabjackClient;
+use async_labjack::{TEST, TEST_FLOAT32, TEST_INT32};
+
+// Change to the address of your labjack
+let socket_addr = "192.168.42.100:502".parse().unwrap();
+
+let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+    .await
+    .unwrap();
+
+// Read a single LabJack tag.
+// Ensure the test value is always 0x00112233
+let value = TEST.read(client).await.unwrap();
+assert_eq!(value, 0x00112233);
+
+// Read and write multiple tags at once.
+// This is done in a single modbus function call, and writes occur before reads,
+// so you can write to tags and immediately get back the newly written values.
+let results = client
+  .read_write_tags(
+      // The tags to read
+      &[
+          TEST_FLOAT32.into(),
+          TEST_INT32.into(),
+      ],
+      // The tags to write to
+      &[
+          TEST_FLOAT32.into(),
+          TEST_INT32.into(),
+      ],
+      // The values to write to the tags
+      &[
+          HydratedTagValue::F32(-98765.43),
+          HydratedTagValue::I32(-987654),
+      ],
+  )
+  .await
+  .unwrap();
+
+let float32_val: f32 = (&results[0]).try_into().unwrap();
+assert_eq!(float32_val, -98765.43);
+
+let int32_val: i32 = (&results[1]).try_into().unwrap();
+assert_eq!(int32_val, -987654);
+
+client.disconnect().await.unwrap();
+```
+*/
+
+pub use crate::labjack::all_tags::*;
+pub use crate::labjack::errors::LabjackErrorCode;
+use thiserror::Error;
+
+pub mod client;
+pub mod helpers;
+pub mod labjack;
+pub mod modbus_feedback;
+pub mod prelude;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(transparent)]
+    LabjackErrorCode(#[from] LabjackErrorCode),
+    #[error(transparent)]
+    TokioModbusExceptionCode(#[from] tokio_modbus::ExceptionCode),
+    #[error("Unknown status code for enum: {0}")]
+    UnknownStatusCode(u16),
+    #[error(transparent)]
+    TokioModbusError(#[from] tokio_modbus::Error),
+    #[error(transparent)]
+    TimeElapsed(#[from] tokio::time::error::Elapsed),
+    #[error(transparent)]
+    Utf8Error(#[from] std::str::Utf8Error),
+    #[error(transparent)]
+    ProcessStreamSendError(#[from] tokio::sync::mpsc::error::SendError<u16>),
+    #[error("{0}")]
+    Other(String),
 }
 
-fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
-    [
-        u16::from_be_bytes([bytes[0], bytes[1]]),
-        u16::from_be_bytes([bytes[2], bytes[3]]),
-    ]
-}
-
-pub struct CanRead;
-pub struct CanWrite;
-pub struct CannotRead;
-pub struct CannotWrite;
-
-pub struct LabjackTag<T, R, W> {
-    address: u16,
-    _phantom_data: PhantomData<(T, R, W)>, // To differentiate types at compile time
-}
-
-impl<T, R, W> LabjackTag<T, R, W> {
-    pub const fn new(address: u16) -> LabjackTag<T, R, W> {
-        LabjackTag::<T, R, W> {
-            address: address,
-            _phantom_data: PhantomData,
-        }
-    }
-}
-
-impl<R> LabjackTag<f32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: f32) -> () {
-        context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
-    }
-}
-
-impl<W> LabjackTag<f32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> f32 {
-        // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
-        // Combine the two u16s into a single u32 in big endian
-        let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
-        // Convert the u32 to f32
-        f32::from_bits(combined_value)
-    }
-}
-
-impl<R> LabjackTag<i32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: i32) -> () {
-        // fetch the data, it is returned in big endian
-        context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
-    }
-}
-
-impl<W> LabjackTag<i32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> i32 {
-        // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
-        // Combine the two u16s into a single u32 in big endian
-        let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
-        // Convert the u32 to i32
-        i32::from_be_bytes(combined_value.to_be_bytes())
-    }
-}
-
-impl<R> LabjackTag<u32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: u32) -> () {
-        // fetch the data, it is returned in big endian
-        context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
-    }
-}
-
-impl<W> LabjackTag<u32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> u32 {
-        // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
-        // Combine the two u16s into a single u32 in big endian
-        (u32::from(data[0]) << 16) | u32::from(data[1])
-    }
-}
-
-impl<W> LabjackTag<u16, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> u16 {
-        // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 1)
-            .await
-            .unwrap()
-            .unwrap();
-        u16::from(data[0])
-    }
-}
-
-impl<R> LabjackTag<u16, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: u16) -> () {
-        // fetch the data, it is returned in big endian
-        context
-            .write_single_register(self.address, val)
-            .await
-            .unwrap()
-            .unwrap();
-    }
-}
-
-pub const AIN0: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
-pub const TEST: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(55100);
-pub const TEST_UINT16: LabjackTag<u16, CanRead, CanWrite> = LabjackTag::new(55110);
-pub const TEST_UINT32: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(55120);
-pub const TEST_INT32: LabjackTag<i32, CanRead, CanWrite> = LabjackTag::new(55122);
-pub const TEST_FLOAT32: LabjackTag<f32, CanRead, CanWrite> = LabjackTag::new(55124);
+/// Specialized [`std::result::Result`] type
+pub type Result<T> = std::result::Result<T, Error>;

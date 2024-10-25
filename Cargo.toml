@@ -1,21 +1,39 @@
 [package]
-description = "A pure rust interface to the LabJack T-series via Modbus TCP"
+description = "A pure rust, async interface to the LabJack T-series via Modbus TCP"
 edition = "2021"
-license = "MIT OR Apache-2.0"
-name = "tokio_labjack"
-repository = "https://github.com/nschrading/tokio_labjack"
+license = "MIT"
+name = "async_labjack"
+repository = "https://github.com/nschrading/async_labjack"
 version = "0.1.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
-name = "tokio_labjack_lib"
+name = "async_labjack"
 path = "src/lib.rs"
 
-[[bin]]
-name = "tokio_labjack"
-path = "src/bin.rs"
-
 [dependencies]
-tokio = { version = "1.4", features = ["rt", "macros"] }
-tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
+async-trait = "0.1"
+bytes = "1"
+derive_builder = "0.20"
+enum_dispatch = "0.3"
+thiserror = "2"
+tokio = { version = "1", features = ["time", "rt", "net"] }
+tokio-modbus = { version = "0.16", default-features = false, features = [
+    "tcp",
+] }
+tokio-util = "0.7"
+tracing = { version = "0.1", features = ["log"] }
+
+[dev-dependencies]
+env_logger = "0.11"
+mockall = "0.13"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "signal",
+    "net",
+] }
+
+[profile.release]
+codegen-units = 1
+lto = true

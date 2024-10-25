@@ -1,0 +1,15 @@
+[package]
+description = "Internal script to generate labjack tags from ljm_constants.json"
+edition = "2021"
+license = "MIT"
+name = "generate_tags"
+version = "0.1.0"
+
+[[bin]]
+name = "generate_tags"
+path = "generate_tags.rs"
+
+[dependencies]
+regex = "1"
+serde = "1"
+serde_json = "1"
