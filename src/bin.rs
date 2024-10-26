@@ -1,10 +1,13 @@
 use log::{debug, error, info, log_enabled, Level};
+use std::borrow::Cow;
 use std::ffi::CString;
 use tokio_labjack_lib::{
-    AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
-    FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
-    FILE_IO_SIZE_BYTES, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32,
+    u16_to_u8_vec, CustomReader, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN,
+    FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE,
+    FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ, FILE_IO_SIZE_BYTES, TEST, TEST_FLOAT32, TEST_INT32,
+    TEST_UINT16, TEST_UINT32,
 };
+use tokio_modbus::bytes::Buf;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,8 +17,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut ctx = tcp::connect(socket_addr).await?;
-
-    println!("Fetching the coupler ID");
 
     // // fetch the data, it is returned in big endian
     // let data: Vec<u16> = ctx.read_input_registers(0x2, 2).await??;
@@ -85,10 +86,64 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("wrote 1 to FILE_IO_OPEN");
     let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await;
     println!("number of bytes to read from file: {num_file_content_bytes:?}");
-    let file_data = FILE_IO_READ
-        .read_file(&mut ctx, num_file_content_bytes)
-        .await;
-    println!("file_data: {file_data:?}");
+    // let file_data = FILE_IO_READ
+    //     .read_file(&mut ctx, num_file_content_bytes)
+    //     .await;
+
+    let rsp = ctx.read_frames(&[60656], &[0x91]).await.unwrap().unwrap();
+    println!(
+        "file_data: {:?}",
+        String::from_utf8(u16_to_u8_vec(&rsp)).unwrap()
+    );
+
+    let rsp = ctx
+        .read_frames(&[0, 55100], &[2, 2])
+        .await
+        .unwrap()
+        .unwrap();
+    println!("multi data: {:?}", rsp);
+
+    // let rsp = ctx
+    //     .call(Request::Custom(
+    //         0x4C,
+    //         Cow::Borrowed(&[0x00, 0xEC, 0xF0, 0x91]),
+    //     ))
+    //     .await??;
+    // match rsp {
+    //     Response::Custom(f, mut rsp) => {
+    //         println!("Result for function {f} is '{rsp:?}'");
+    //     }
+    //     _ => {
+    //         panic!("unexpected result");
+    //     }
+    // }
+
+    // println!("file_data: {file_data:?}");
+
+    // println!("using custom data request");
+    // let rsp = ctx
+    //     .call(Request::Custom(
+    //         0x4C,
+    //         Cow::Borrowed(&[0x00, 0xD7, 0x50, 0x02]),
+    //     ))
+    //     .await??;
+
+    // // let rsp = ctx
+    // //     .call(Request::Custom(
+    // //         0x4C,
+    // //         Cow::Borrowed(&[
+    // //             0x01, 0x03, 0xe8, 0x02, 0x3f, 0x9d, 0x70, 0xa4, 0x00, 0x00, 0x00, 0x02,
+    // //         ]),
+    // //     ))
+    // //     .await??;
+    // match rsp {
+    //     Response::Custom(f, mut rsp) => {
+    //         println!("Result for function {f} is '{bytes:?}'");
+    //     }
+    //     _ => {
+    //         panic!("unexpected result");
+    //     }
+    // }
 
     println!("Disconnecting");
     ctx.disconnect().await?;

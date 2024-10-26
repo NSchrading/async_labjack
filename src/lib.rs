@@ -1,9 +1,15 @@
+use std::borrow::Cow;
 use std::cmp;
 use std::ffi::CString;
 use std::io::Read;
+use std::iter::zip;
 use std::marker::PhantomData;
-use tokio_modbus::client::{Context, Writer};
+use tokio_modbus::client::{Client, Context, Writer};
 use tokio_modbus::prelude::Reader;
+use tokio_modbus::prelude::Request;
+use tokio_modbus::prelude::Response;
+use tokio_modbus::Address;
+use tokio_modbus::Quantity;
 use tokio_modbus::Result;
 
 pub enum LabjackType {
@@ -22,14 +28,14 @@ fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
     ]
 }
 
-fn u16_to_u8_vec(input: Vec<u16>) -> Vec<u8> {
+pub fn u16_to_u8_vec(input: &[u16]) -> Vec<u8> {
     input
         .iter()
         .flat_map(|x| x.to_be_bytes().to_vec())
         .collect()
 }
 
-fn u8_to_u16_vec(input: Vec<u8>) -> Vec<u16> {
+fn u8_to_u16_vec(input: &[u8]) -> Vec<u16> {
     input
         .chunks_exact(2)
         .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
@@ -162,14 +168,13 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
         let mut data_bytes: Vec<u8> = Vec::new();
 
         while register_count > 0 {
-            println!("loop!");
             let num_registers_to_read = cmp::min(register_count, MAX_REGISTERS);
             let data: Vec<u16> = context
                 .read_holding_registers(self.address, num_registers_to_read)
                 .await
                 .unwrap()
                 .unwrap();
-            data_bytes.extend_from_slice(&u16_to_u8_vec(data));
+            data_bytes.extend_from_slice(&u16_to_u8_vec(&data));
             register_count -= num_registers_to_read;
         }
         if len % 2 != 0 {
@@ -197,10 +202,45 @@ impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
     pub async fn write(self, context: &mut Context, val: Vec<u8>) -> () {
         // fetch the data, it is returned in big endian
         context
-            .write_multiple_registers(self.address, &u8_to_u16_vec(val))
+            .write_multiple_registers(self.address, &u8_to_u16_vec(&val))
             .await
             .unwrap()
             .unwrap();
+    }
+}
+
+pub trait CustomReader: Client {
+    /// Read multiple frames (0x4C)
+    async fn read_frames(&mut self, addr: &[Address], cnt: &[u8]) -> Result<Vec<u16>>;
+}
+
+impl CustomReader for Context {
+    async fn read_frames(&mut self, addr: &[Address], cnt: &[u8]) -> Result<Vec<u16>> {
+        let mut bytes = Vec::new();
+
+        for (address, count) in zip(addr, cnt) {
+            bytes.push(0);
+            bytes.extend(address.to_be_bytes());
+            bytes.push(*count);
+        }
+
+        println!("bytes: {bytes:?}");
+
+        self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
+            .await
+            .map(|result| {
+                result.map_err(Into::into).map(|response| match response {
+                    Response::Custom(function_code, words) => {
+                        debug_assert_eq!(function_code, 0x4C);
+                        debug_assert_eq!(
+                            words.len(),
+                            cnt.iter().map(|&val| (val as usize) * 2).sum()
+                        );
+                        u8_to_u16_vec(words.as_ref())
+                    }
+                    _ => unreachable!("call() should reject mismatching responses"),
+                })
+            })
     }
 }
 
