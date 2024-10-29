@@ -1,13 +1,11 @@
-use log::{debug, error, info, log_enabled, Level};
-use std::borrow::Cow;
-use std::ffi::CString;
+use tokio_labjack_lib::helpers::bit_manipulation::u16_to_u8_vec;
+use tokio_labjack_lib::modbus_feedback::mbfb::CustomReader;
 use tokio_labjack_lib::{
-    u16_to_u8_vec, CustomReader, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN,
-    FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE,
-    FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ, FILE_IO_SIZE_BYTES, TEST, TEST_FLOAT32, TEST_INT32,
+    AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
+    FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
+    FILE_IO_SIZE_BYTES, MA_COMM_ID, MA_PKT_SIZE_ETH_502, TEST, TEST_FLOAT32, TEST_INT32,
     TEST_UINT16, TEST_UINT32,
 };
-use tokio_modbus::bytes::Buf;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,21 +84,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("wrote 1 to FILE_IO_OPEN");
     let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await;
     println!("number of bytes to read from file: {num_file_content_bytes:?}");
-    // let file_data = FILE_IO_READ
-    //     .read_file(&mut ctx, num_file_content_bytes)
-    //     .await;
+    let file_data = FILE_IO_READ
+        .read_file(&mut ctx, num_file_content_bytes)
+        .await;
+    println!("file_data: {file_data:?}");
 
-    let rsp = ctx.read_frames(&[60656], &[0x91]).await.unwrap().unwrap();
-    println!(
-        "file_data: {:?}",
-        String::from_utf8(u16_to_u8_vec(&rsp)).unwrap()
-    );
+    // let rsp = ctx.read_frames(&[60656], &[0x91]).await.unwrap().unwrap();
+    // println!(
+    //     "file_data: {:?}",
+    //     String::from_utf8(u16_to_u8_vec(&rsp)).unwrap()
+    // );
 
-    let rsp = ctx
-        .read_frames(&[0, 55100], &[2, 2])
-        .await
-        .unwrap()
-        .unwrap();
+    let rsp = ctx.read_frames(&[0], &[254]).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
 
     // let rsp = ctx
@@ -144,6 +139,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //         panic!("unexpected result");
     //     }
     // }
+
+    let value = MA_COMM_ID.read(&mut ctx).await;
+    println!("MA_COMM_ID: {value:?}");
+
+    let value = MA_PKT_SIZE_ETH_502.read(&mut ctx).await;
+    println!("MA_PKT_SIZE_ETH_502: {value:?}");
 
     println!("Disconnecting");
     ctx.disconnect().await?;
