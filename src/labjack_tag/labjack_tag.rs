@@ -11,7 +11,7 @@ pub struct CannotWrite;
 use std::ffi::CString;
 
 pub struct LabjackTag<T, R, W> {
-    address: u16,
+    pub address: u16,
     _phantom_data: PhantomData<(T, R, W)>, // To differentiate types at compile time
 }
 
@@ -21,6 +21,12 @@ impl<T, R, W> LabjackTag<T, R, W> {
             address: address,
             _phantom_data: PhantomData,
         }
+    }
+}
+
+impl<R, W> LabjackTag<f32, R, W> {
+    pub fn register_count(self) -> u8 {
+        2
     }
 }
 
@@ -46,6 +52,12 @@ impl<W> LabjackTag<f32, CanRead, W> {
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to f32
         f32::from_bits(combined_value)
+    }
+}
+
+impl<R, W> LabjackTag<i32, R, W> {
+    pub fn register_count(self) -> u8 {
+        2
     }
 }
 
@@ -75,6 +87,12 @@ impl<W> LabjackTag<i32, CanRead, W> {
     }
 }
 
+impl<R, W> LabjackTag<u32, R, W> {
+    pub fn register_count(self) -> u8 {
+        2
+    }
+}
+
 impl<R> LabjackTag<u32, R, CanWrite> {
     pub async fn write(self, context: &mut Context, val: u32) -> () {
         // fetch the data, it is returned in big endian
@@ -96,6 +114,12 @@ impl<W> LabjackTag<u32, CanRead, W> {
             .unwrap();
         // Combine the two u16s into a single u32 in big endian
         (u32::from(data[0]) << 16) | u32::from(data[1])
+    }
+}
+
+impl<R, W> LabjackTag<u16, R, W> {
+    pub fn register_count(self) -> u8 {
+        1
     }
 }
 
@@ -188,4 +212,67 @@ impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
             .unwrap()
             .unwrap();
     }
+}
+
+pub trait Hydratable {
+    fn hydrate(&self, bytes: &[u8]) -> HydratedTag;
+    fn register_count(&self) -> u8;
+    fn address(&self) -> u16;
+}
+
+impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
+    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
+        // Convert the u32 to f32
+        HydratedTag::F32(f32::from_be_bytes(bytes.try_into().unwrap()))
+    }
+    fn register_count(&self) -> u8 {
+        2
+    }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
+    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
+        HydratedTag::I32(i32::from_be_bytes(bytes.try_into().unwrap()))
+    }
+    fn register_count(&self) -> u8 {
+        2
+    }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+impl<W> Hydratable for LabjackTag<u32, CanRead, W> {
+    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
+        HydratedTag::U32(u32::from_be_bytes(bytes.try_into().unwrap()))
+    }
+    fn register_count(&self) -> u8 {
+        2
+    }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
+    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
+        HydratedTag::U16(u16::from_be_bytes(bytes.try_into().unwrap()))
+    }
+    fn register_count(&self) -> u8 {
+        1
+    }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+#[derive(Debug)]
+pub enum HydratedTag {
+    F32(f32),
+    I32(i32),
+    U32(u32),
+    U16(u16),
 }

@@ -1,7 +1,7 @@
 use tokio_labjack_lib::helpers::bit_manipulation::u16_to_u8_vec;
 use tokio_labjack_lib::modbus_feedback::mbfb::CustomReader;
 use tokio_labjack_lib::{
-    AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
+    AIN0, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
     FILE_IO_SIZE_BYTES, MA_COMM_ID, MA_PKT_SIZE_ETH_502, TEST, TEST_FLOAT32, TEST_INT32,
     TEST_UINT16, TEST_UINT32,
@@ -145,6 +145,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let value = MA_PKT_SIZE_ETH_502.read(&mut ctx).await;
     println!("MA_PKT_SIZE_ETH_502: {value:?}");
+
+    let results = ctx
+        .read_tags(&[
+            &AIN1,
+            &TEST_FLOAT32,
+            &TEST_INT32,
+            &TEST_UINT16,
+            &TEST_UINT32,
+        ])
+        .await;
+    println!("weird tag results: {results:?}");
 
     println!("Disconnecting");
     ctx.disconnect().await?;

@@ -1,5 +1,8 @@
 use crate::helpers::bit_manipulation::u8_to_u16_vec;
+use crate::labjack_tag::labjack_tag::{Hydratable, HydratedTag, LabjackTag};
 use std::borrow::Cow;
+use std::io::Cursor;
+use std::io::Read;
 use std::iter::zip;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::{Request, Response};
@@ -11,6 +14,7 @@ pub trait CustomReader: Client {
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
     async fn read_frame_bytes(&mut self, addr: &[Address], cnt: &[u8]) -> Result<Vec<u8>>;
     async fn read_frames(&mut self, addr: &[Address], cnt: &[u8]) -> Result<Vec<u16>>;
+    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTag>>;
 }
 
 impl CustomReader for Context {
@@ -46,5 +50,42 @@ impl CustomReader for Context {
         self.read_frame_bytes(addr, cnt)
             .await
             .map(|result| result.map(|response| u8_to_u16_vec(&response)))
+    }
+
+    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTag>> {
+        let mut addresses = Vec::new();
+        let mut counts: Vec<u8> = Vec::new();
+        for tag in tags {
+            addresses.push(tag.address());
+            counts.push(tag.register_count());
+        }
+        let result = self
+            .read_frame_bytes(&addresses, &counts)
+            .await
+            .map(|result| {
+                result.map(|response| {
+                    let mut hydrated_result = Vec::new();
+                    let mut byte_cursor = Cursor::new(response);
+                    for tag in tags {
+                        match tag.register_count() {
+                            1 => {
+                                let mut bytes = [0; 2];
+                                byte_cursor.read_exact(&mut bytes).unwrap();
+                                hydrated_result.push(tag.hydrate(&bytes))
+                            }
+                            2 => {
+                                let mut bytes = [0; 4];
+                                byte_cursor.read_exact(&mut bytes).unwrap();
+                                hydrated_result.push(tag.hydrate(&bytes))
+                            }
+                            _ => unreachable!(
+                                "There should never be a tag with a register count not equal to 1 or 2."
+                            ),
+                        }
+                    }
+                    hydrated_result
+                })
+            });
+        result
     }
 }
