@@ -1,5 +1,6 @@
 use tokio_labjack_lib::helpers::bit_manipulation::u16_to_u8_vec;
-use tokio_labjack_lib::modbus_feedback::mbfb::CustomReader;
+use tokio_labjack_lib::labjack_tag::labjack_tag::HydratedTag;
+use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, ModbusFeedbackFrame};
 use tokio_labjack_lib::{
     AIN0, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
@@ -95,50 +96,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     String::from_utf8(u16_to_u8_vec(&rsp)).unwrap()
     // );
 
-    let rsp = ctx.read_frames(&[0], &[254]).await.unwrap().unwrap();
+    let mbfb = ModbusFeedbackFrame {
+        read_addresses: &[0],
+        read_counts: &[254],
+        write_addresses: &[],
+        write_counts: &[],
+        write_data: &[],
+    };
+    let rsp = ctx.read_frames(&mbfb).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
-
-    // let rsp = ctx
-    //     .call(Request::Custom(
-    //         0x4C,
-    //         Cow::Borrowed(&[0x00, 0xEC, 0xF0, 0x91]),
-    //     ))
-    //     .await??;
-    // match rsp {
-    //     Response::Custom(f, mut rsp) => {
-    //         println!("Result for function {f} is '{rsp:?}'");
-    //     }
-    //     _ => {
-    //         panic!("unexpected result");
-    //     }
-    // }
-
-    // println!("file_data: {file_data:?}");
-
-    // println!("using custom data request");
-    // let rsp = ctx
-    //     .call(Request::Custom(
-    //         0x4C,
-    //         Cow::Borrowed(&[0x00, 0xD7, 0x50, 0x02]),
-    //     ))
-    //     .await??;
-
-    // // let rsp = ctx
-    // //     .call(Request::Custom(
-    // //         0x4C,
-    // //         Cow::Borrowed(&[
-    // //             0x01, 0x03, 0xe8, 0x02, 0x3f, 0x9d, 0x70, 0xa4, 0x00, 0x00, 0x00, 0x02,
-    // //         ]),
-    // //     ))
-    // //     .await??;
-    // match rsp {
-    //     Response::Custom(f, mut rsp) => {
-    //         println!("Result for function {f} is '{bytes:?}'");
-    //     }
-    //     _ => {
-    //         panic!("unexpected result");
-    //     }
-    // }
 
     let value = MA_COMM_ID.read(&mut ctx).await;
     println!("MA_COMM_ID: {value:?}");
@@ -156,6 +122,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .await;
     println!("weird tag results: {results:?}");
+
+    println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
+    ctx.write_frame_bytes(
+        &[TEST_FLOAT32.address, TEST_INT32.address],
+        &[2, 2],
+        &[0x40, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6],
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let value = TEST_FLOAT32.read(&mut ctx).await;
+
+    println!("TEST_FLOAT32: {value:?}");
+
+    let value = TEST_INT32.read(&mut ctx).await;
+
+    println!("TEST_INT32: {value:?}");
+
+    ctx.write_frames(
+        &[TEST_FLOAT32.address, TEST_INT32.address],
+        &[2, 2],
+        &[0x40ad, 0xd3c3, 0xFFFF, 0xFEC6],
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let value = TEST_FLOAT32.read(&mut ctx).await;
+
+    println!("TEST_FLOAT32: {value:?}");
+
+    let value = TEST_INT32.read(&mut ctx).await;
+
+    println!("TEST_INT32: {value:?}");
+
+    println!("writing 123.432 to TEST_FLOAT32, 347382 to TEST_INT32, and 65000 to TEST_UINT16");
+    ctx.write_tags(
+        &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
+        &[
+            HydratedTag::F32(123.432),
+            HydratedTag::I32(347382),
+            HydratedTag::U16(65000),
+        ],
+    )
+    .await
+    .unwrap()
+    .unwrap();
+
+    let value = TEST_FLOAT32.read(&mut ctx).await;
+
+    println!("TEST_FLOAT32: {value:?}");
+
+    let value = TEST_INT32.read(&mut ctx).await;
+
+    println!("TEST_INT32: {value:?}");
+
+    let value = TEST_UINT16.read(&mut ctx).await;
+
+    println!("TEST_UINT16: {value:?}");
 
     println!("Disconnecting");
     ctx.disconnect().await?;

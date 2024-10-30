@@ -1,5 +1,5 @@
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u16_to_u8_vec, u8_to_u16_vec};
-use crate::modbus_feedback::mbfb::CustomReader;
+use crate::modbus_feedback::mbfb::{CustomReader, ModbusFeedbackFrame};
 use std::cmp;
 use std::marker::PhantomData;
 use tokio_modbus::client::{Context, Writer};
@@ -169,11 +169,15 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
                 register_count -= num_registers_to_read;
             }
 
-            let result = context
-                .read_frame_bytes(&addresses, &register_counts)
-                .await
-                .unwrap()
-                .unwrap();
+            let mbfb = ModbusFeedbackFrame {
+                read_addresses: &addresses,
+                read_counts: &register_counts,
+                write_addresses: &[],
+                write_counts: &[],
+                write_data: &[],
+            };
+
+            let result = context.read_frame_bytes(&mbfb).await.unwrap().unwrap();
             println!("num bytes read: {:?}", result.len());
             num_bytes_to_read = num_bytes_to_read.saturating_sub(result.len() as u32);
             println!("need to read: {num_bytes_to_read:?} bytes");

@@ -17,6 +17,7 @@ name = "tokio_labjack"
 path = "src/bin.rs"
 
 [dependencies]
+bytes = "*"
 env_logger = "*"
 log = "*"
 tokio = { version = "1.4", features = ["rt", "macros"] }
