@@ -169,15 +169,9 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
                 register_count -= num_registers_to_read;
             }
 
-            let mbfb = ModbusFeedbackFrame {
-                read_addresses: &addresses,
-                read_counts: &register_counts,
-                write_addresses: &[],
-                write_counts: &[],
-                write_data: &[],
-            };
+            let mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
 
-            let result = context.read_frame_bytes(&mbfb).await.unwrap().unwrap();
+            let result = context.read_mbfb(&mbfb).await.unwrap().unwrap();
             println!("num bytes read: {:?}", result.len());
             num_bytes_to_read = num_bytes_to_read.saturating_sub(result.len() as u32);
             println!("need to read: {num_bytes_to_read:?} bytes");

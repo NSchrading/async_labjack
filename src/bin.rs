@@ -90,20 +90,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     println!("file_data: {file_data:?}");
 
-    // let rsp = ctx.read_frames(&[60656], &[0x91]).await.unwrap().unwrap();
-    // println!(
-    //     "file_data: {:?}",
-    //     String::from_utf8(u16_to_u8_vec(&rsp)).unwrap()
-    // );
-
-    let mbfb = ModbusFeedbackFrame {
-        read_addresses: &[0],
-        read_counts: &[254],
-        write_addresses: &[],
-        write_counts: &[],
-        write_data: &[],
-    };
-    let rsp = ctx.read_frames(&mbfb).await.unwrap().unwrap();
+    let mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
+    let rsp = ctx.read_mbfb(&mbfb).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
 
     let value = MA_COMM_ID.read(&mut ctx).await;
@@ -124,31 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("weird tag results: {results:?}");
 
     println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
-    ctx.write_frame_bytes(
+    let mbfb = ModbusFeedbackFrame::new_write_frame(
         &[TEST_FLOAT32.address, TEST_INT32.address],
         &[2, 2],
         &[0x40, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6],
-    )
-    .await
-    .unwrap()
-    .unwrap();
-
-    let value = TEST_FLOAT32.read(&mut ctx).await;
-
-    println!("TEST_FLOAT32: {value:?}");
-
-    let value = TEST_INT32.read(&mut ctx).await;
-
-    println!("TEST_INT32: {value:?}");
-
-    ctx.write_frames(
-        &[TEST_FLOAT32.address, TEST_INT32.address],
-        &[2, 2],
-        &[0x40ad, 0xd3c3, 0xFFFF, 0xFEC6],
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    );
+    ctx.write_frame_bytes(&mbfb).await.unwrap().unwrap();
 
     let value = TEST_FLOAT32.read(&mut ctx).await;
 
@@ -182,6 +151,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let value = TEST_UINT16.read(&mut ctx).await;
 
     println!("TEST_UINT16: {value:?}");
+
+    println!("writing 999.999 to TEST_FLOAT32, 1234 to TEST_INT32, and 4321 to TEST_UINT16");
+    let results = ctx
+        .read_write_tags(
+            &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
+            &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
+            &[
+                HydratedTag::F32(999.999),
+                HydratedTag::I32(1234),
+                HydratedTag::U16(4321),
+            ],
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    println!("weird tag results: {results:?}");
 
     println!("Disconnecting");
     ctx.disconnect().await?;
