@@ -1,4 +1,4 @@
-use tokio_labjack_lib::helpers::bit_manipulation::u16_to_u8_vec;
+use bytes::Bytes;
 use tokio_labjack_lib::labjack_tag::labjack_tag::HydratedTag;
 use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, ModbusFeedbackFrame};
 use tokio_labjack_lib::{
@@ -90,8 +90,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await;
     println!("file_data: {file_data:?}");
 
-    let mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
-    let rsp = ctx.read_mbfb(&mbfb).await.unwrap().unwrap();
+    let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
+    let rsp = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
 
     let value = MA_COMM_ID.read(&mut ctx).await;
@@ -112,12 +112,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("weird tag results: {results:?}");
 
     println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
-    let mbfb = ModbusFeedbackFrame::new_write_frame(
+    let mut mbfb = ModbusFeedbackFrame::new_write_frame(
         &[TEST_FLOAT32.address, TEST_INT32.address],
         &[2, 2],
-        &[0x40, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6],
+        Bytes::from(&[0x40_u8, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6][..]),
     );
-    ctx.write_frame_bytes(&mbfb).await.unwrap().unwrap();
+    ctx.write_frame_bytes(&mut mbfb).await.unwrap().unwrap();
 
     let value = TEST_FLOAT32.read(&mut ctx).await;
 

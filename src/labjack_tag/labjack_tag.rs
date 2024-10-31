@@ -1,5 +1,6 @@
-use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u16_to_u8_vec, u8_to_u16_vec};
+use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::{CustomReader, ModbusFeedbackFrame};
+use bytes::{Buf, Bytes};
 use std::cmp;
 use std::marker::PhantomData;
 use tokio_modbus::client::{Context, Writer};
@@ -169,9 +170,9 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
                 register_count -= num_registers_to_read;
             }
 
-            let mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
+            let mut mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
 
-            let result = context.read_mbfb(&mbfb).await.unwrap().unwrap();
+            let result = context.read_mbfb(&mut mbfb).await.unwrap().unwrap();
             println!("num bytes read: {:?}", result.len());
             num_bytes_to_read = num_bytes_to_read.saturating_sub(result.len() as u32);
             println!("need to read: {num_bytes_to_read:?} bytes");
@@ -213,15 +214,15 @@ impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
 }
 
 pub trait Hydratable {
-    fn hydrate(&self, bytes: &[u8]) -> HydratedTag;
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag;
     fn register_count(&self) -> u8;
     fn address(&self) -> u16;
 }
 
 impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
-    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
         // Convert the u32 to f32
-        HydratedTag::F32(f32::from_be_bytes(bytes.try_into().unwrap()))
+        HydratedTag::F32(bytes.get_f32())
     }
     fn register_count(&self) -> u8 {
         2
@@ -232,8 +233,8 @@ impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
 }
 
 impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
-    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
-        HydratedTag::I32(i32::from_be_bytes(bytes.try_into().unwrap()))
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
+        HydratedTag::I32(bytes.get_i32())
     }
     fn register_count(&self) -> u8 {
         2
@@ -244,8 +245,8 @@ impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
 }
 
 impl<W> Hydratable for LabjackTag<u32, CanRead, W> {
-    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
-        HydratedTag::U32(u32::from_be_bytes(bytes.try_into().unwrap()))
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
+        HydratedTag::U32(bytes.get_u32())
     }
     fn register_count(&self) -> u8 {
         2
@@ -256,8 +257,8 @@ impl<W> Hydratable for LabjackTag<u32, CanRead, W> {
 }
 
 impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
-    fn hydrate(&self, bytes: &[u8]) -> HydratedTag {
-        HydratedTag::U16(u16::from_be_bytes(bytes.try_into().unwrap()))
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
+        HydratedTag::U16(bytes.get_u16())
     }
     fn register_count(&self) -> u8 {
         1
