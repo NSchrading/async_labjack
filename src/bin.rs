@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use tokio_labjack_lib::labjack_tag::labjack_tag::HydratedTag;
+use tokio_labjack_lib::labjack_tag::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, ModbusFeedbackFrame};
 use tokio_labjack_lib::{
     AIN0, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // // Convert the u32 to f32
     // let value = f32::from_bits(combined_value);
 
-    let value = AIN1.read(&mut ctx).await;
+    let value = AIN1.read(&mut ctx).await.unwrap();
 
     println!("The data is {value:?}");
 
@@ -32,41 +32,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // println!("TEST: {value:?}");
 
-    let value = TEST_FLOAT32.read(&mut ctx).await;
+    let value = TEST_FLOAT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_FLOAT32: {value:?}");
 
-    TEST_FLOAT32.write(&mut ctx, 43.2).await;
+    TEST_FLOAT32.write(&mut ctx, 43.2).await.unwrap();
 
-    let value = TEST_FLOAT32.read(&mut ctx).await;
+    let value = TEST_FLOAT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_FLOAT32: {value:?}");
 
-    let value = TEST_INT32.read(&mut ctx).await;
+    let value = TEST_INT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_INT32: {value:?}");
 
-    let value = TEST_UINT16.read(&mut ctx).await;
+    let value = TEST_UINT16.read(&mut ctx).await.unwrap();
 
     println!("TEST_UINT16: {value:?}");
 
-    let value = TEST_UINT32.read(&mut ctx).await;
+    let value = TEST_UINT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_UINT32: {value:?}");
 
     //test get cwd
-    FILE_IO_DIR_CURRENT.write(&mut ctx, 1).await;
-    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut ctx).await;
+    FILE_IO_DIR_CURRENT.write(&mut ctx, 1).await.unwrap();
+    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut ctx).await.unwrap();
     println!("reading num_bytes: {num_bytes:?}");
-    let cwd = FILE_IO_PATH_READ.read_string(&mut ctx, num_bytes).await;
+    let cwd = FILE_IO_PATH_READ
+        .read_string(&mut ctx, num_bytes)
+        .await
+        .unwrap();
     println!("cwd: {cwd:?}");
 
     // test read cwd
-    FILE_IO_DIR_FIRST.write(&mut ctx, 1).await;
-    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut ctx).await;
+    FILE_IO_DIR_FIRST.write(&mut ctx, 1).await.unwrap();
+    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut ctx).await.unwrap();
     println!("reading num_bytes: {num_bytes:?}");
-    let path = FILE_IO_PATH_READ.read_string(&mut ctx, num_bytes).await;
-    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await;
+    let path = FILE_IO_PATH_READ
+        .read_string(&mut ctx, num_bytes)
+        .await
+        .unwrap();
+    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await.unwrap();
     println!("path: {path:?}");
     println!("file byte size: {num_file_content_bytes:?}");
 
@@ -77,27 +83,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("fname bytes: {filename:?}");
     FILE_IO_PATH_WRITE_LEN_BYTES
         .write(&mut ctx, fname_num_bytes as u32)
-        .await;
+        .await
+        .unwrap();
     println!("wrote fname_num_bytes: {fname_num_bytes:?}");
-    FILE_IO_PATH_WRITE.write(&mut ctx, filename).await;
+    FILE_IO_PATH_WRITE.write(&mut ctx, filename).await.unwrap();
     println!("wrote filename to FILE_IO_PATH_WRITE");
-    FILE_IO_OPEN.write(&mut ctx, 1).await;
+    FILE_IO_OPEN.write(&mut ctx, 1).await.unwrap();
     println!("wrote 1 to FILE_IO_OPEN");
-    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await;
+    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await.unwrap();
     println!("number of bytes to read from file: {num_file_content_bytes:?}");
     let file_data = FILE_IO_READ
         .read_file(&mut ctx, num_file_content_bytes)
-        .await;
+        .await
+        .unwrap();
     println!("file_data: {file_data:?}");
 
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
     let rsp = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
 
-    let value = MA_COMM_ID.read(&mut ctx).await;
+    let value = MA_COMM_ID.read(&mut ctx).await.unwrap();
     println!("MA_COMM_ID: {value:?}");
 
-    let value = MA_PKT_SIZE_ETH_502.read(&mut ctx).await;
+    let value = MA_PKT_SIZE_ETH_502.read(&mut ctx).await.unwrap();
     println!("MA_PKT_SIZE_ETH_502: {value:?}");
 
     let results = ctx
@@ -108,7 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &TEST_UINT16,
             &TEST_UINT32,
         ])
-        .await;
+        .await
+        .unwrap()
+        .unwrap();
     println!("weird tag results: {results:?}");
 
     println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
@@ -117,13 +127,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[2, 2],
         Bytes::from(&[0x40_u8, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6][..]),
     );
-    ctx.write_frame_bytes(&mut mbfb).await.unwrap().unwrap();
+    ctx.write_mbfb(&mut mbfb).await.unwrap().unwrap();
 
-    let value = TEST_FLOAT32.read(&mut ctx).await;
+    let value = TEST_FLOAT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_FLOAT32: {value:?}");
 
-    let value = TEST_INT32.read(&mut ctx).await;
+    let value = TEST_INT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_INT32: {value:?}");
 
@@ -131,24 +141,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctx.write_tags(
         &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
         &[
-            HydratedTag::F32(123.432),
-            HydratedTag::I32(347382),
-            HydratedTag::U16(65000),
+            HydratedTagValue::F32(123.432),
+            HydratedTagValue::I32(347382),
+            HydratedTagValue::U16(65000),
         ],
     )
     .await
     .unwrap()
     .unwrap();
 
-    let value = TEST_FLOAT32.read(&mut ctx).await;
+    let value = TEST_FLOAT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_FLOAT32: {value:?}");
 
-    let value = TEST_INT32.read(&mut ctx).await;
+    let value = TEST_INT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_INT32: {value:?}");
 
-    let value = TEST_UINT16.read(&mut ctx).await;
+    let value = TEST_UINT16.read(&mut ctx).await.unwrap();
 
     println!("TEST_UINT16: {value:?}");
 
@@ -158,9 +168,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
             &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
             &[
-                HydratedTag::F32(999.999),
-                HydratedTag::I32(1234),
-                HydratedTag::U16(4321),
+                HydratedTagValue::F32(999.999),
+                HydratedTagValue::I32(1234),
+                HydratedTagValue::U16(4321),
             ],
         )
         .await

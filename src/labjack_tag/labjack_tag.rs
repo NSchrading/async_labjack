@@ -1,6 +1,6 @@
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::{CustomReader, ModbusFeedbackFrame};
-use bytes::{Buf, Bytes};
+use bytes::{Buf, Bytes, BytesMut};
 use std::cmp;
 use std::marker::PhantomData;
 use tokio_modbus::client::{Context, Writer};
@@ -9,7 +9,8 @@ pub struct CanRead;
 pub struct CanWrite;
 pub struct CannotRead;
 pub struct CannotWrite;
-use std::ffi::CString;
+use anyhow::Result;
+use std::str;
 
 pub struct LabjackTag<T, R, W> {
     pub address: u16,
@@ -25,133 +26,83 @@ impl<T, R, W> LabjackTag<T, R, W> {
     }
 }
 
-impl<R, W> LabjackTag<f32, R, W> {
-    pub fn register_count(self) -> u8 {
-        2
-    }
-}
-
 impl<R> LabjackTag<f32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: f32) -> () {
-        context
+    pub async fn write(self, context: &mut Context, val: f32) -> Result<()> {
+        Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
+            .await??)
     }
 }
 
 impl<W> LabjackTag<f32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> f32 {
+    pub async fn read(self, context: &mut Context) -> Result<f32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
+        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
         // Combine the two u16s into a single u32 in big endian
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to f32
-        f32::from_bits(combined_value)
-    }
-}
-
-impl<R, W> LabjackTag<i32, R, W> {
-    pub fn register_count(self) -> u8 {
-        2
+        Ok(f32::from_bits(combined_value))
     }
 }
 
 impl<R> LabjackTag<i32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: i32) -> () {
+    pub async fn write(self, context: &mut Context, val: i32) -> Result<()> {
         // fetch the data, it is returned in big endian
-        context
+        Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
+            .await??)
     }
 }
 
 impl<W> LabjackTag<i32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> i32 {
+    pub async fn read(self, context: &mut Context) -> Result<i32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
+        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
         // Combine the two u16s into a single u32 in big endian
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to i32
-        i32::from_be_bytes(combined_value.to_be_bytes())
-    }
-}
-
-impl<R, W> LabjackTag<u32, R, W> {
-    pub fn register_count(self) -> u8 {
-        2
+        Ok(i32::from_be_bytes(combined_value.to_be_bytes()))
     }
 }
 
 impl<R> LabjackTag<u32, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: u32) -> () {
+    pub async fn write(self, context: &mut Context, val: u32) -> Result<()> {
         // fetch the data, it is returned in big endian
-        context
+        Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await
-            .unwrap()
-            .unwrap();
+            .await??)
     }
 }
 
 impl<W> LabjackTag<u32, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> u32 {
+    pub async fn read(self, context: &mut Context) -> Result<u32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 2)
-            .await
-            .unwrap()
-            .unwrap();
+        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
         // Combine the two u16s into a single u32 in big endian
-        (u32::from(data[0]) << 16) | u32::from(data[1])
-    }
-}
-
-impl<R, W> LabjackTag<u16, R, W> {
-    pub fn register_count(self) -> u8 {
-        1
+        Ok((u32::from(data[0]) << 16) | u32::from(data[1]))
     }
 }
 
 impl<W> LabjackTag<u16, CanRead, W> {
-    pub async fn read(self, context: &mut Context) -> u16 {
+    pub async fn read(self, context: &mut Context) -> Result<u16> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context
-            .read_input_registers(self.address, 1)
-            .await
-            .unwrap()
-            .unwrap();
-        u16::from(data[0])
+        let data: Vec<u16> = context.read_input_registers(self.address, 1).await??;
+        Ok(u16::from(data[0]))
     }
 }
 
 impl<R> LabjackTag<u16, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: u16) -> () {
+    pub async fn write(self, context: &mut Context, val: u16) -> Result<()> {
         // fetch the data, it is returned in big endian
-        context
-            .write_single_register(self.address, val)
-            .await
-            .unwrap()
-            .unwrap();
+        Ok(context.write_single_register(self.address, val).await??)
     }
 }
 
 impl<W> LabjackTag<Vec<u8>, CanRead, W> {
-    pub async fn read(self, context: &mut Context, num_bytes: u32) -> Vec<u8> {
+    pub async fn read(self, context: &mut Context, num_bytes: u32) -> Result<Bytes> {
         let MAX_BYTES_PER_CALL = 1020; // Max ethernet packet size is 1040 bytes, keeping this at 1020 bytes accounts for overhead from the MBFB response packet
         let mut num_bytes_to_read = num_bytes;
-        let mut data_bytes: Vec<u8> = Vec::new();
+        let mut data_bytes = BytesMut::with_capacity(num_bytes as usize);
 
         while num_bytes_to_read > 0 {
             let limited_num_bytes_to_read = cmp::min(num_bytes_to_read, MAX_BYTES_PER_CALL);
@@ -172,7 +123,7 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
 
             let mut mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
 
-            let result = context.read_mbfb(&mut mbfb).await.unwrap().unwrap();
+            let result = context.read_mbfb(&mut mbfb).await??;
             println!("num bytes read: {:?}", result.len());
             num_bytes_to_read = num_bytes_to_read.saturating_sub(result.len() as u32);
             println!("need to read: {num_bytes_to_read:?} bytes");
@@ -182,48 +133,64 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
 
         // If we want a non-even number of bytes, we need to pop off the last byte because read_frame_bytes will always return a whole number of 16-bit registers.
         if num_bytes % 2 != 0 {
-            data_bytes.pop();
+            data_bytes.truncate(data_bytes.len() - 1);
         }
-        data_bytes
+        Ok(data_bytes.freeze())
     }
 
-    pub async fn read_string(self, context: &mut Context, len: u32) -> String {
-        let bytes = self.read(context, len).await;
-        CString::from_vec_with_nul(bytes)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .into()
+    pub async fn read_string(self, context: &mut Context, len: u32) -> Result<String> {
+        let mut bytes = self.read(context, len).await?;
+        // The bytes returned will have a null byte
+        bytes.truncate(bytes.len() - 1);
+        let str_slice = str::from_utf8(&bytes)?;
+        Ok(str_slice.to_string())
     }
 
-    pub async fn read_file(self, context: &mut Context, len: u32) -> String {
-        let bytes = self.read(context, len).await;
-        String::from_utf8(bytes).unwrap()
+    pub async fn read_file(self, context: &mut Context, len: u32) -> Result<String> {
+        let bytes = self.read(context, len).await?;
+        let str_slice = str::from_utf8(&bytes)?;
+        Ok(str_slice.to_string())
     }
 }
 
 impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: Vec<u8>) -> () {
+    pub async fn write(self, context: &mut Context, val: Vec<u8>) -> Result<()> {
         // fetch the data, it is returned in big endian
-        context
+        Ok(context
             .write_multiple_registers(self.address, &u8_to_u16_vec(&val))
-            .await
-            .unwrap()
-            .unwrap();
+            .await??)
     }
 }
 
-pub trait Hydratable {
-    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag;
+pub trait Addressable {
     fn register_count(&self) -> u8;
     fn address(&self) -> u16;
 }
 
-impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
-    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
-        // Convert the u32 to f32
-        HydratedTag::F32(bytes.get_f32())
+pub trait Hydratable: Addressable {
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue;
+}
+
+pub trait Writable: Addressable {}
+
+impl<R, W> Addressable for LabjackTag<f32, R, W> {
+    fn register_count(&self) -> u8 {
+        2
     }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
+        HydratedTagValue::F32(bytes.get_f32())
+    }
+}
+
+impl<R> Writable for LabjackTag<f32, R, CanWrite> {}
+
+impl<R, W> Addressable for LabjackTag<i32, R, W> {
     fn register_count(&self) -> u8 {
         2
     }
@@ -233,9 +200,14 @@ impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
 }
 
 impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
-    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
-        HydratedTag::I32(bytes.get_i32())
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
+        HydratedTagValue::I32(bytes.get_i32())
     }
+}
+
+impl<R> Writable for LabjackTag<i32, R, CanWrite> {}
+
+impl<R, W> Addressable for LabjackTag<u32, R, W> {
     fn register_count(&self) -> u8 {
         2
     }
@@ -245,21 +217,14 @@ impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
 }
 
 impl<W> Hydratable for LabjackTag<u32, CanRead, W> {
-    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
-        HydratedTag::U32(bytes.get_u32())
-    }
-    fn register_count(&self) -> u8 {
-        2
-    }
-    fn address(&self) -> u16 {
-        self.address
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
+        HydratedTagValue::U32(bytes.get_u32())
     }
 }
 
-impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
-    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTag {
-        HydratedTag::U16(bytes.get_u16())
-    }
+impl<R> Writable for LabjackTag<u32, R, CanWrite> {}
+
+impl<R, W> Addressable for LabjackTag<u16, R, W> {
     fn register_count(&self) -> u8 {
         1
     }
@@ -268,8 +233,16 @@ impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
     }
 }
 
+impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
+        HydratedTagValue::U16(bytes.get_u16())
+    }
+}
+
+impl<R> Writable for LabjackTag<u16, R, CanWrite> {}
+
 #[derive(Debug)]
-pub enum HydratedTag {
+pub enum HydratedTagValue {
     F32(f32),
     I32(i32),
     U32(u32),

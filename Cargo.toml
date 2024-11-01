@@ -17,6 +17,7 @@ name = "tokio_labjack"
 path = "src/bin.rs"
 
 [dependencies]
+anyhow = "*"
 bytes = "*"
 env_logger = "*"
 log = "*"

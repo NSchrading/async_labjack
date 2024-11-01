@@ -1,4 +1,4 @@
-use crate::labjack_tag::labjack_tag::{Hydratable, HydratedTag};
+use crate::labjack_tag::labjack_tag::{Hydratable, HydratedTagValue, Writable};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::iter::zip;
@@ -56,7 +56,7 @@ impl<'a> ModbusFeedbackFrame<'a> {
         }
     }
 
-    fn to_bytes(&mut self) -> BytesMut {
+    fn to_bytes(&mut self) -> Bytes {
         let mut bytes = BytesMut::with_capacity(
             self.read_addresses.len() * 3 + self.write_addresses.len() * 3 + self.write_data.len(),
         );
@@ -88,27 +88,30 @@ impl<'a> ModbusFeedbackFrame<'a> {
             bytes.put_u8(*count);
         }
 
-        bytes
+        bytes.freeze()
     }
 }
 
 pub trait CustomReader: Client {
     /// Read multiple frames using custom MBFB modbus function implemented in labjacks (0x4C)
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
-    async fn read_write_frame_bytes(&mut self, bytes: &[u8]) -> Result<Bytes>;
+    async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes>;
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
-    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTag>>;
+    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTagValue>>;
 
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
     async fn read_write_tags(
         &mut self,
         read_tags: &[&dyn Hydratable],
-        write_tags: &[&dyn Hydratable],
-        tag_values: &[HydratedTag],
-    ) -> Result<Vec<HydratedTag>>;
+        write_tags: &[&dyn Writable],
+        tag_values: &[HydratedTagValue],
+    ) -> Result<Vec<HydratedTagValue>>;
 }
 
-fn bytes_to_hydrated_tags(bytes: &mut Bytes, read_tags: &[&dyn Hydratable]) -> Vec<HydratedTag> {
+fn bytes_to_hydrated_tags(
+    bytes: &mut Bytes,
+    read_tags: &[&dyn Hydratable],
+) -> Vec<HydratedTagValue> {
     let mut hydrated_result = Vec::new();
     for tag in read_tags {
         match tag.register_count() {
@@ -122,8 +125,37 @@ fn bytes_to_hydrated_tags(bytes: &mut Bytes, read_tags: &[&dyn Hydratable]) -> V
     hydrated_result
 }
 
+fn write_tags_to_bytes(tags: &[&dyn Writable], tag_values: &[HydratedTagValue]) -> Bytes {
+    // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
+    let mut bytes = BytesMut::with_capacity(tags.len() * 3 + tag_values.len() * 4);
+    for (tag, tag_value) in zip(tags, tag_values) {
+        bytes.put_u8(1);
+        bytes.put_u16(tag.address());
+        bytes.put_u8(tag.register_count());
+
+        match tag_value {
+            HydratedTagValue::F32(value) => bytes.put_f32(*value),
+            HydratedTagValue::I32(value) => bytes.put_i32(*value),
+            HydratedTagValue::U32(value) => bytes.put_u32(*value),
+            HydratedTagValue::U16(value) => bytes.put_u16(*value),
+        }
+    }
+    bytes.freeze()
+}
+
+fn read_tags_to_bytes(tags: &[&dyn Hydratable]) -> Bytes {
+    // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
+    let mut bytes = BytesMut::with_capacity(tags.len() * 3);
+    for tag in tags {
+        bytes.put_u8(0);
+        bytes.put_u16(tag.address());
+        bytes.put_u8(tag.register_count());
+    }
+    bytes.freeze()
+}
+
 impl CustomReader for Context {
-    async fn read_write_frame_bytes(&mut self, bytes: &[u8]) -> Result<Bytes> {
+    async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
         println!("bytes: {bytes:?}");
 
         self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
@@ -145,10 +177,10 @@ impl CustomReader for Context {
         assert!(mbfb.write_data.len() == 0);
 
         let bytes = mbfb.to_bytes();
-        self.read_write_frame_bytes(&bytes).await
+        self.read_write_frame_bytes(bytes).await
     }
 
-    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTag>> {
+    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTagValue>> {
         let mut addresses = Vec::new();
         let mut counts: Vec<u8> = Vec::new();
         for tag in tags {
@@ -166,15 +198,15 @@ impl CustomReader for Context {
 
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
         let bytes = mbfb.to_bytes();
-        self.read_write_frame_bytes(&bytes).await
+        self.read_write_frame_bytes(bytes).await
     }
 
     async fn read_write_tags(
         &mut self,
         read_tags: &[&dyn Hydratable],
-        write_tags: &[&dyn Hydratable],
-        tag_values: &[HydratedTag],
-    ) -> Result<Vec<HydratedTag>> {
+        write_tags: &[&dyn Writable],
+        tag_values: &[HydratedTagValue],
+    ) -> Result<Vec<HydratedTagValue>> {
         let mut read_addresses = Vec::new();
         let mut read_counts: Vec<u8> = Vec::new();
         for tag in read_tags {
@@ -182,30 +214,14 @@ impl CustomReader for Context {
             read_counts.push(tag.register_count());
         }
 
-        let mut write_addresses = Vec::new();
-        let mut registers_per_address = Vec::new();
-        let mut write_bytes = BytesMut::new();
+        // Add write bytes before read bytes. This allows for single operations that write to data
+        // and then return their newly written values as reads.
+        let write_bytes = write_tags_to_bytes(write_tags, tag_values);
+        let read_bytes = read_tags_to_bytes(read_tags);
+        let total_len = write_bytes.len() + read_bytes.len();
+        let bytes = write_bytes.chain(read_bytes).copy_to_bytes(total_len);
 
-        for (tag, tag_value) in zip(write_tags, tag_values) {
-            write_addresses.push(tag.address());
-            registers_per_address.push(tag.register_count());
-
-            match tag_value {
-                HydratedTag::F32(value) => write_bytes.put_f32(*value),
-                HydratedTag::I32(value) => write_bytes.put_i32(*value),
-                HydratedTag::U32(value) => write_bytes.put_u32(*value),
-                HydratedTag::U16(value) => write_bytes.put_u16(*value),
-            }
-        }
-
-        let mut mbfb = ModbusFeedbackFrame::new(
-            &read_addresses,
-            &write_addresses,
-            &read_counts,
-            &registers_per_address,
-            write_bytes.freeze(),
-        );
-        let result = self.read_write_mbfb(&mut mbfb).await.map(|result| {
+        let result = self.read_write_frame_bytes(bytes).await.map(|result| {
             result.map(|mut response| bytes_to_hydrated_tags(&mut response, read_tags))
         });
         result
@@ -215,22 +231,27 @@ impl CustomReader for Context {
 pub trait CustomWriter: Client {
     /// Write multiple frames using custom MBFB modbus function implemented in labjacks (0x4C)
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
-    async fn write_frame_bytes(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
+    async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
+    async fn write_bytes(&mut self, bytes: Bytes) -> Result<()>;
 
     async fn write_tags(
         &mut self,
-        tags: &[&dyn Hydratable],
-        tag_values: &[HydratedTag],
+        tags: &[&dyn Writable],
+        tag_values: &[HydratedTagValue],
     ) -> Result<()>;
 }
 
 impl CustomWriter for Context {
-    async fn write_frame_bytes(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
+    async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
         assert!(mbfb.read_addresses.len() == 0);
         assert!(mbfb.read_counts.len() == 0);
 
         let bytes = mbfb.to_bytes();
 
+        self.write_bytes(bytes).await
+    }
+
+    async fn write_bytes(&mut self, bytes: Bytes) -> Result<()> {
         println!("bytes: {bytes:?}");
 
         self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
@@ -248,31 +269,10 @@ impl CustomWriter for Context {
 
     async fn write_tags(
         &mut self,
-        tags: &[&dyn Hydratable],
-        tag_values: &[HydratedTag],
+        tags: &[&dyn Writable],
+        tag_values: &[HydratedTagValue],
     ) -> Result<()> {
-        let mut addresses = Vec::new();
-        let mut registers_per_address = Vec::new();
-        let mut bytes = BytesMut::new();
-
-        for (tag, tag_value) in zip(tags, tag_values) {
-            addresses.push(tag.address());
-            registers_per_address.push(tag.register_count());
-
-            match tag_value {
-                HydratedTag::F32(value) => bytes.put_f32(*value),
-                HydratedTag::I32(value) => bytes.put_i32(*value),
-                HydratedTag::U32(value) => bytes.put_u32(*value),
-                HydratedTag::U16(value) => bytes.put_u16(*value),
-            }
-        }
-
-        let mut mbfb = ModbusFeedbackFrame::new_write_frame(
-            &addresses,
-            &registers_per_address,
-            bytes.freeze(),
-        );
-
-        self.write_frame_bytes(&mut mbfb).await
+        self.write_bytes(write_tags_to_bytes(tags, tag_values))
+            .await
     }
 }
