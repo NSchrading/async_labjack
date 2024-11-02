@@ -10,8 +10,8 @@ pub struct CanWrite;
 pub struct CannotRead;
 pub struct CannotWrite;
 use anyhow::Result;
+use enum_dispatch::enum_dispatch;
 use std::str;
-
 pub struct LabjackTag<T, R, W> {
     pub address: u16,
     _phantom_data: PhantomData<(T, R, W)>, // To differentiate types at compile time
@@ -98,7 +98,7 @@ impl<R> LabjackTag<u16, R, CanWrite> {
     }
 }
 
-impl<W> LabjackTag<Vec<u8>, CanRead, W> {
+impl<W> LabjackTag<Bytes, CanRead, W> {
     pub async fn read(self, context: &mut Context, num_bytes: u32) -> Result<Bytes> {
         let MAX_BYTES_PER_CALL = 1020; // Max ethernet packet size is 1040 bytes, keeping this at 1020 bytes accounts for overhead from the MBFB response packet
         let mut num_bytes_to_read = num_bytes;
@@ -140,7 +140,7 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
 
     pub async fn read_string(self, context: &mut Context, len: u32) -> Result<String> {
         let mut bytes = self.read(context, len).await?;
-        // The bytes returned will have a null byte
+        // The bytes returned will have a null byte (c-string)
         bytes.truncate(bytes.len() - 1);
         let str_slice = str::from_utf8(&bytes)?;
         Ok(str_slice.to_string())
@@ -153,8 +153,8 @@ impl<W> LabjackTag<Vec<u8>, CanRead, W> {
     }
 }
 
-impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
-    pub async fn write(self, context: &mut Context, val: Vec<u8>) -> Result<()> {
+impl<R> LabjackTag<Bytes, R, CanWrite> {
+    pub async fn write(self, context: &mut Context, val: Bytes) -> Result<()> {
         // fetch the data, it is returned in big endian
         Ok(context
             .write_multiple_registers(self.address, &u8_to_u16_vec(&val))
@@ -162,15 +162,18 @@ impl<R> LabjackTag<Vec<u8>, R, CanWrite> {
     }
 }
 
+#[enum_dispatch]
 pub trait Addressable {
     fn register_count(&self) -> u8;
     fn address(&self) -> u16;
 }
 
-pub trait Hydratable: Addressable {
+#[enum_dispatch]
+pub trait Readable: Addressable {
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue;
 }
 
+#[enum_dispatch]
 pub trait Writable: Addressable {}
 
 impl<R, W> Addressable for LabjackTag<f32, R, W> {
@@ -182,7 +185,7 @@ impl<R, W> Addressable for LabjackTag<f32, R, W> {
     }
 }
 
-impl<W> Hydratable for LabjackTag<f32, CanRead, W> {
+impl<W> Readable for LabjackTag<f32, CanRead, W> {
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
         HydratedTagValue::F32(bytes.get_f32())
     }
@@ -199,7 +202,7 @@ impl<R, W> Addressable for LabjackTag<i32, R, W> {
     }
 }
 
-impl<W> Hydratable for LabjackTag<i32, CanRead, W> {
+impl<W> Readable for LabjackTag<i32, CanRead, W> {
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
         HydratedTagValue::I32(bytes.get_i32())
     }
@@ -216,7 +219,7 @@ impl<R, W> Addressable for LabjackTag<u32, R, W> {
     }
 }
 
-impl<W> Hydratable for LabjackTag<u32, CanRead, W> {
+impl<W> Readable for LabjackTag<u32, CanRead, W> {
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
         HydratedTagValue::U32(bytes.get_u32())
     }
@@ -233,7 +236,7 @@ impl<R, W> Addressable for LabjackTag<u16, R, W> {
     }
 }
 
-impl<W> Hydratable for LabjackTag<u16, CanRead, W> {
+impl<W> Readable for LabjackTag<u16, CanRead, W> {
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
         HydratedTagValue::U16(bytes.get_u16())
     }
@@ -247,4 +250,36 @@ pub enum HydratedTagValue {
     I32(i32),
     U32(u32),
     U16(u16),
+}
+
+#[enum_dispatch(Addressable)]
+#[enum_dispatch(Writable)]
+pub enum WritableLabjackTag {
+    F32WriteOnly(LabjackTag<f32, CannotRead, CanWrite>),
+    F32ReadWrite(LabjackTag<f32, CanRead, CanWrite>),
+
+    I32WriteOnly(LabjackTag<i32, CannotRead, CanWrite>),
+    I32ReadWrite(LabjackTag<i32, CanRead, CanWrite>),
+
+    U32WriteOnly(LabjackTag<u32, CannotRead, CanWrite>),
+    U32ReadWrite(LabjackTag<u32, CanRead, CanWrite>),
+
+    U16WriteOnly(LabjackTag<u16, CannotRead, CanWrite>),
+    U16ReadWrite(LabjackTag<u16, CanRead, CanWrite>),
+}
+
+#[enum_dispatch(Addressable)]
+#[enum_dispatch(Readable)]
+pub enum ReadableLabjackTag {
+    F32ReadOnly(LabjackTag<f32, CanRead, CannotWrite>),
+    F32ReadWrite(LabjackTag<f32, CanRead, CanWrite>),
+
+    I32ReadOnly(LabjackTag<i32, CanRead, CannotWrite>),
+    I32ReadWrite(LabjackTag<i32, CanRead, CanWrite>),
+
+    U32ReadOnly(LabjackTag<u32, CanRead, CannotWrite>),
+    U32ReadWrite(LabjackTag<u32, CanRead, CanWrite>),
+
+    U16ReadOnly(LabjackTag<u16, CanRead, CannotWrite>),
+    U16ReadWrite(LabjackTag<u16, CanRead, CanWrite>),
 }

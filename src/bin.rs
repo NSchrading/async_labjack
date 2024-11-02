@@ -77,8 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("file byte size: {num_file_content_bytes:?}");
 
     // test read a file
-    let mut filename: Vec<u8> = "/log1.csv".as_bytes().to_vec();
-    filename.push(0);
+    let filename = Bytes::from_static(b"/log1.csv\0");
     let fname_num_bytes = filename.len();
     println!("fname bytes: {filename:?}");
     FILE_IO_PATH_WRITE_LEN_BYTES
@@ -110,11 +109,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let results = ctx
         .read_tags(&[
-            &AIN1,
-            &TEST_FLOAT32,
-            &TEST_INT32,
-            &TEST_UINT16,
-            &TEST_UINT32,
+            AIN1.into(),
+            TEST_FLOAT32.into(),
+            TEST_INT32.into(),
+            TEST_UINT16.into(),
+            TEST_UINT32.into(),
         ])
         .await
         .unwrap()
@@ -139,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("writing 123.432 to TEST_FLOAT32, 347382 to TEST_INT32, and 65000 to TEST_UINT16");
     ctx.write_tags(
-        &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
+        &[TEST_FLOAT32.into(), TEST_INT32.into(), TEST_UINT16.into()],
         &[
             HydratedTagValue::F32(123.432),
             HydratedTagValue::I32(347382),
@@ -165,8 +164,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("writing 999.999 to TEST_FLOAT32, 1234 to TEST_INT32, and 4321 to TEST_UINT16");
     let results = ctx
         .read_write_tags(
-            &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
-            &[&TEST_FLOAT32, &TEST_INT32, &TEST_UINT16],
+            &[TEST_FLOAT32.into(), TEST_INT32.into(), TEST_UINT16.into()],
+            &[TEST_FLOAT32.into(), TEST_INT32.into(), TEST_UINT16.into()],
             &[
                 HydratedTagValue::F32(999.999),
                 HydratedTagValue::I32(1234),

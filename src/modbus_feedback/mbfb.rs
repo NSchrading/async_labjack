@@ -1,4 +1,6 @@
-use crate::labjack_tag::labjack_tag::{Hydratable, HydratedTagValue, Writable};
+use crate::labjack_tag::labjack_tag::{
+    Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
+};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::iter::zip;
@@ -97,20 +99,20 @@ pub trait CustomReader: Client {
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes>;
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
-    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTagValue>>;
+    async fn read_tags(&mut self, tags: &[ReadableLabjackTag]) -> Result<Vec<HydratedTagValue>>;
 
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
-    async fn read_write_tags(
+    async fn read_write_tags<const N: usize>(
         &mut self,
-        read_tags: &[&dyn Hydratable],
-        write_tags: &[&dyn Writable],
-        tag_values: &[HydratedTagValue],
+        read_tags: &[ReadableLabjackTag],
+        write_tags: &[WritableLabjackTag; N],
+        tag_values: &[HydratedTagValue; N],
     ) -> Result<Vec<HydratedTagValue>>;
 }
 
 fn bytes_to_hydrated_tags(
     bytes: &mut Bytes,
-    read_tags: &[&dyn Hydratable],
+    read_tags: &[ReadableLabjackTag],
 ) -> Vec<HydratedTagValue> {
     let mut hydrated_result = Vec::new();
     for tag in read_tags {
@@ -125,7 +127,10 @@ fn bytes_to_hydrated_tags(
     hydrated_result
 }
 
-fn write_tags_to_bytes(tags: &[&dyn Writable], tag_values: &[HydratedTagValue]) -> Bytes {
+fn write_tags_to_bytes<const N: usize>(
+    tags: &[WritableLabjackTag; N],
+    tag_values: &[HydratedTagValue; N],
+) -> Bytes {
     // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
     let mut bytes = BytesMut::with_capacity(tags.len() * 3 + tag_values.len() * 4);
     for (tag, tag_value) in zip(tags, tag_values) {
@@ -143,7 +148,7 @@ fn write_tags_to_bytes(tags: &[&dyn Writable], tag_values: &[HydratedTagValue]) 
     bytes.freeze()
 }
 
-fn read_tags_to_bytes(tags: &[&dyn Hydratable]) -> Bytes {
+fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
     // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
     let mut bytes = BytesMut::with_capacity(tags.len() * 3);
     for tag in tags {
@@ -180,7 +185,7 @@ impl CustomReader for Context {
         self.read_write_frame_bytes(bytes).await
     }
 
-    async fn read_tags(&mut self, tags: &[&dyn Hydratable]) -> Result<Vec<HydratedTagValue>> {
+    async fn read_tags(&mut self, tags: &[ReadableLabjackTag]) -> Result<Vec<HydratedTagValue>> {
         let mut addresses = Vec::new();
         let mut counts: Vec<u8> = Vec::new();
         for tag in tags {
@@ -201,11 +206,11 @@ impl CustomReader for Context {
         self.read_write_frame_bytes(bytes).await
     }
 
-    async fn read_write_tags(
+    async fn read_write_tags<const N: usize>(
         &mut self,
-        read_tags: &[&dyn Hydratable],
-        write_tags: &[&dyn Writable],
-        tag_values: &[HydratedTagValue],
+        read_tags: &[ReadableLabjackTag],
+        write_tags: &[WritableLabjackTag; N],
+        tag_values: &[HydratedTagValue; N],
     ) -> Result<Vec<HydratedTagValue>> {
         let mut read_addresses = Vec::new();
         let mut read_counts: Vec<u8> = Vec::new();
@@ -234,10 +239,10 @@ pub trait CustomWriter: Client {
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()>;
 
-    async fn write_tags(
+    async fn write_tags<const N: usize>(
         &mut self,
-        tags: &[&dyn Writable],
-        tag_values: &[HydratedTagValue],
+        tags: &[WritableLabjackTag; N],
+        tag_values: &[HydratedTagValue; N],
     ) -> Result<()>;
 }
 
@@ -267,10 +272,10 @@ impl CustomWriter for Context {
             })
     }
 
-    async fn write_tags(
+    async fn write_tags<const N: usize>(
         &mut self,
-        tags: &[&dyn Writable],
-        tag_values: &[HydratedTagValue],
+        tags: &[WritableLabjackTag; N],
+        tag_values: &[HydratedTagValue; N],
     ) -> Result<()> {
         self.write_bytes(write_tags_to_bytes(tags, tag_values))
             .await
