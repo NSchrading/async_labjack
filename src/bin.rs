@@ -4,8 +4,7 @@ use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, Modbu
 use tokio_labjack_lib::{
     AIN0, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
-    FILE_IO_SIZE_BYTES, MA_COMM_ID, MA_PKT_SIZE_ETH_502, TEST, TEST_FLOAT32, TEST_INT32,
-    TEST_UINT16, TEST_UINT32,
+    FILE_IO_SIZE_BYTES, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32,
 };
 
 #[tokio::main(flavor = "current_thread")]
@@ -100,12 +99,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
     let rsp = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
     println!("multi data: {:?}", rsp);
-
-    let value = MA_COMM_ID.read(&mut ctx).await.unwrap();
-    println!("MA_COMM_ID: {value:?}");
-
-    let value = MA_PKT_SIZE_ETH_502.read(&mut ctx).await.unwrap();
-    println!("MA_PKT_SIZE_ETH_502: {value:?}");
 
     let results = ctx
         .read_tags(&[

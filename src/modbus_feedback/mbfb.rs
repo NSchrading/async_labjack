@@ -1,6 +1,7 @@
 use crate::labjack_tag::labjack_tag::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
 };
+use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::iter::zip;
@@ -94,14 +95,15 @@ impl<'a> ModbusFeedbackFrame<'a> {
     }
 }
 
+#[async_trait]
 pub trait CustomReader: Client {
     /// Read multiple frames using custom MBFB modbus function implemented in labjacks (0x4C)
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes>;
-    async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
+    async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes>;
     async fn read_tags(&mut self, tags: &[ReadableLabjackTag]) -> Result<Vec<HydratedTagValue>>;
 
-    async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame) -> Result<Bytes>;
+    async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes>;
     async fn read_write_tags<const N: usize>(
         &mut self,
         read_tags: &[ReadableLabjackTag],
@@ -159,6 +161,7 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
     bytes.freeze()
 }
 
+#[async_trait]
 impl CustomReader for Context {
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
         println!("bytes: {bytes:?}");
@@ -233,6 +236,7 @@ impl CustomReader for Context {
     }
 }
 
+#[async_trait]
 pub trait CustomWriter: Client {
     /// Write multiple frames using custom MBFB modbus function implemented in labjacks (0x4C)
     /// https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76)
@@ -246,6 +250,7 @@ pub trait CustomWriter: Client {
     ) -> Result<()>;
 }
 
+#[async_trait]
 impl CustomWriter for Context {
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
         assert!(mbfb.read_addresses.len() == 0);

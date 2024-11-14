@@ -157,7 +157,7 @@ impl<R> LabjackTag<Bytes, R, CanWrite> {
     pub async fn write(self, context: &mut Context, val: Bytes) -> Result<()> {
         // fetch the data, it is returned in big endian
         Ok(context
-            .write_multiple_registers(self.address, &u8_to_u16_vec(&val))
+            .write_multiple_registers(self.address, &u8_to_u16_vec(&val)?)
             .await??)
     }
 }
