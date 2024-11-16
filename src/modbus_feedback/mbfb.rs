@@ -1,4 +1,4 @@
-use crate::labjack_tag::labjack_tag::{
+use crate::labjack_tag::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
 };
 use async_trait::async_trait;
@@ -27,19 +27,19 @@ impl<'a> ModbusFeedbackFrame<'a> {
         write_data: Bytes,
     ) -> Self {
         Self {
-            read_addresses: read_addresses,
-            write_addresses: write_addresses,
-            read_counts: read_counts,
-            write_counts: write_counts,
-            write_data: write_data,
+            read_addresses,
+            write_addresses,
+            read_counts,
+            write_counts,
+            write_data,
         }
     }
 
     pub fn new_read_frame(read_addresses: &'a [Address], read_counts: &'a [u8]) -> Self {
         Self {
-            read_addresses: read_addresses,
+            read_addresses,
             write_addresses: &[],
-            read_counts: read_counts,
+            read_counts,
             write_counts: &[],
             write_data: Bytes::new(),
         }
@@ -52,22 +52,23 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ) -> Self {
         Self {
             read_addresses: &[],
-            write_addresses: write_addresses,
+            write_addresses,
             read_counts: &[],
-            write_counts: write_counts,
-            write_data: write_data,
+            write_counts,
+            write_data,
         }
     }
 
-    fn to_bytes(&mut self) -> Bytes {
+    fn to_bytes_mut(&mut self) -> Bytes {
         let mut bytes = BytesMut::with_capacity(
-            self.read_addresses.len() * 3 + self.write_addresses.len() * 3 + self.write_data.len(),
+            self.read_addresses.len() * 4 + self.write_addresses.len() * 4 + self.write_data.len(),
         );
 
         // Add write bytes before read bytes. This allows for single operations that write to data
         // and then return their newly written values as reads.
-        // If a frame generates an error, no further frames are executed. Frames before the error frames are executed (e.g. outputs are set),
-        // but no data is returned for those frames (since you just get the standard Modbus error response).
+        // If a frame generates an error, no further frames are executed.
+        // Frames before the error frames are executed (e.g. outputs are set), but no data is
+        // returned for those frames (since you just get the standard Modbus error response).
         for (address, num_registers) in zip(self.write_addresses, self.write_counts) {
             bytes.put_u8(1);
             bytes.put_u16(*address);
@@ -133,8 +134,11 @@ fn write_tags_to_bytes<const N: usize>(
     tags: &[WritableLabjackTag; N],
     tag_values: &[HydratedTagValue; N],
 ) -> Bytes {
-    // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
-    let mut bytes = BytesMut::with_capacity(tags.len() * 3 + tag_values.len() * 4);
+    // overestimate capacity in the case of u16 values, but usually each tag_value is going to be
+    // 4 bytes (u32, f32, etc).
+    // This could be more accurate by looping through tag_values and matching on the type to get
+    // the exact sizes, but probably not necessary.
+    let mut bytes = BytesMut::with_capacity(tags.len() * 4 + tag_values.len() * 4);
     for (tag, tag_value) in zip(tags, tag_values) {
         bytes.put_u8(1);
         bytes.put_u16(tag.address());
@@ -151,8 +155,7 @@ fn write_tags_to_bytes<const N: usize>(
 }
 
 fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
-    // overestimate capacity in the case of u16 values, but usually each tag_value is going to be 4 bytes (u32, f32, etc)
-    let mut bytes = BytesMut::with_capacity(tags.len() * 3);
+    let mut bytes = BytesMut::with_capacity(tags.len() * 4);
     for tag in tags {
         bytes.put_u8(0);
         bytes.put_u16(tag.address());
@@ -164,8 +167,6 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 #[async_trait]
 impl CustomReader for Context {
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
-        println!("bytes: {bytes:?}");
-
         self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {
@@ -180,11 +181,11 @@ impl CustomReader for Context {
     }
 
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
-        assert!(mbfb.write_addresses.len() == 0);
-        assert!(mbfb.write_counts.len() == 0);
-        assert!(mbfb.write_data.len() == 0);
+        assert!(mbfb.write_addresses.is_empty());
+        assert!(mbfb.write_counts.is_empty());
+        assert!(mbfb.write_data.is_empty());
 
-        let bytes = mbfb.to_bytes();
+        let bytes = mbfb.to_bytes_mut();
         self.read_write_frame_bytes(bytes).await
     }
 
@@ -197,15 +198,13 @@ impl CustomReader for Context {
         }
 
         let mut mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &counts);
-        let result = self
-            .read_mbfb(&mut mbfb)
+        self.read_mbfb(&mut mbfb)
             .await
-            .map(|result| result.map(|mut response| bytes_to_hydrated_tags(&mut response, tags)));
-        result
+            .map(|result| result.map(|mut response| bytes_to_hydrated_tags(&mut response, tags)))
     }
 
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
-        let bytes = mbfb.to_bytes();
+        let bytes = mbfb.to_bytes_mut();
         self.read_write_frame_bytes(bytes).await
     }
 
@@ -229,10 +228,9 @@ impl CustomReader for Context {
         let total_len = write_bytes.len() + read_bytes.len();
         let bytes = write_bytes.chain(read_bytes).copy_to_bytes(total_len);
 
-        let result = self.read_write_frame_bytes(bytes).await.map(|result| {
+        self.read_write_frame_bytes(bytes).await.map(|result| {
             result.map(|mut response| bytes_to_hydrated_tags(&mut response, read_tags))
-        });
-        result
+        })
     }
 }
 
@@ -253,17 +251,16 @@ pub trait CustomWriter: Client {
 #[async_trait]
 impl CustomWriter for Context {
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
-        assert!(mbfb.read_addresses.len() == 0);
-        assert!(mbfb.read_counts.len() == 0);
+        assert!(mbfb.read_addresses.is_empty());
+        assert!(mbfb.read_counts.is_empty());
 
-        let bytes = mbfb.to_bytes();
+        let bytes = mbfb.to_bytes_mut();
+        log::debug!("Raw bytes of mbfb: {bytes:?}");
 
         self.write_bytes(bytes).await
     }
 
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()> {
-        println!("bytes: {bytes:?}");
-
         self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {

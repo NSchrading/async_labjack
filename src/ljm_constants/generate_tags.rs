@@ -1,32 +1,30 @@
 use regex::Regex;
-use serde::de::Deserializer;
 use std::fmt;
 use std::fs::File;
-use std::io::BufReader;
 use std::io::Write;
-use std::path::Path;
 
-struct LabjackTag<'a> {
-    name: &'a str,
-    register_type: &'a str,
-    readwrite: &'a str,
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct LabjackTag {
     address: u16,
+    name: String,
+    register_type: String,
+    readwrite: String,
 }
 
-impl<'a> LabjackTag<'a> {
-    fn new(name: &'a str, register_type: &'a str, readwrite: &'a str, address: u16) -> Self {
+impl LabjackTag {
+    fn new(address: u16, name: String, register_type: String, readwrite: String) -> Self {
         LabjackTag {
+            address,
             name,
             register_type,
             readwrite,
-            address,
         }
     }
 }
 
-impl fmt::Display for LabjackTag<'_> {
+impl fmt::Display for LabjackTag {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let register_type = match self.register_type {
+        let register_type = match self.register_type.as_ref() {
             "UINT16" => "u16",
             "UINT32" => "u32",
             "UINT64" => "u64",
@@ -69,17 +67,23 @@ fn main() {
         .expect("The 'registers' key should be an array.");
 
     let mut lib_file = File::create("src/lib.rs").unwrap();
-    writeln!(lib_file, "use crate::labjack_tag::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};");
-    writeln!(lib_file, "use bytes::Bytes;");
-    writeln!(lib_file, "");
-    writeln!(lib_file, "pub mod helpers;");
-    writeln!(lib_file, "pub mod labjack_tag;");
-    writeln!(lib_file, "pub mod modbus_feedback;");
-    writeln!(lib_file, "");
+    writeln!(
+        lib_file,
+        "use crate::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};"
+    )
+    .unwrap();
+    writeln!(lib_file, "use bytes::Bytes;").unwrap();
+    writeln!(lib_file).unwrap();
+    writeln!(lib_file, "pub mod helpers;").unwrap();
+    writeln!(lib_file, "pub mod labjack_tag;").unwrap();
+    writeln!(lib_file, "pub mod modbus_feedback;").unwrap();
+    writeln!(lib_file).unwrap();
     // I define these as LabjackTag<T, R, W>s because these are simple 2 byte structs vs
     // the larger WritableLabjackTag / ReadableLabjackTag enums. This means users need to use
     // .into() to convert to the enum when necessary, but it saves on overall program
     // space since these are consts.
+
+    let mut labjack_tags: Vec<LabjackTag> = Vec::new();
 
     for register in registers {
         let base_address: u16 = register
@@ -100,12 +104,14 @@ fn main() {
             .get("type")
             .expect("Each register must have a type")
             .as_str()
-            .expect("Register type must be a string");
+            .expect("Register type must be a string")
+            .to_string();
         let readwrite_spec = register
             .get("readwrite")
             .expect("Each register must have a readwrite specification")
             .as_str()
-            .expect("Register readwrite must be a string");
+            .expect("Register readwrite must be a string")
+            .to_string();
         if let Some(caps) = address_re.captures(&name) {
             let num_tags: u16 = caps
                 .get(1)
@@ -114,9 +120,11 @@ fn main() {
                 .parse()
                 .expect("The index should be a number from 0-255");
             for idx_offset in 0..num_tags + 1 {
-                let specific_name = address_re.replace(&name, idx_offset.to_string());
+                let specific_name = address_re
+                    .replace(&name, idx_offset.to_string())
+                    .to_string();
 
-                let num_registers = match register_type {
+                let num_registers = match register_type.as_ref() {
                     "UINT16" => 1,
                     "UINT32" => 2,
                     "UINT64" => 4,
@@ -126,20 +134,25 @@ fn main() {
                 };
 
                 let labjack_tag = LabjackTag::new(
-                    &specific_name,
-                    register_type,
-                    readwrite_spec,
                     base_address + (idx_offset * num_registers),
+                    specific_name,
+                    register_type.clone(),
+                    readwrite_spec.clone(),
                 );
-                writeln!(lib_file, "{}", labjack_tag);
+                labjack_tags.push(labjack_tag);
             }
         } else {
-            let labjack_tag = LabjackTag::new(&name, register_type, readwrite_spec, base_address);
-            writeln!(lib_file, "{}", labjack_tag);
+            let labjack_tag = LabjackTag::new(base_address, name, register_type, readwrite_spec);
+            labjack_tags.push(labjack_tag);
         }
 
         // secret registers I could include
         // pub const MA_COMM_ID: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(49600);
         // pub const MA_PKT_SIZE_ETH_502: LabjackTag<u16, CanRead, CanWrite> = LabjackTag::new(49910);
+    }
+
+    labjack_tags.sort();
+    for labjack_tag in &labjack_tags {
+        writeln!(lib_file, "{}", labjack_tag).unwrap();
     }
 }

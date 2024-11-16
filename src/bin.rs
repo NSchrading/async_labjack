@@ -1,10 +1,11 @@
 use bytes::Bytes;
-use tokio_labjack_lib::labjack_tag::labjack_tag::HydratedTagValue;
+use tokio_labjack_lib::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, ModbusFeedbackFrame};
 use tokio_labjack_lib::{
-    AIN0, AIN1, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
-    FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
-    FILE_IO_SIZE_BYTES, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32,
+    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, ETHERNET_MAC, FILE_IO_DIR_CURRENT,
+    FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES,
+    FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ, FILE_IO_SIZE_BYTES, TEST,
+    TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
 };
 
 #[tokio::main(flavor = "current_thread")]
@@ -16,20 +17,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut ctx = tcp::connect(socket_addr).await?;
 
-    // // fetch the data, it is returned in big endian
-    // let data: Vec<u16> = ctx.read_input_registers(0x2, 2).await??;
-    // // Combine the two u16s into a single u32 in big endian
-    // let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
-    // // Convert the u32 to f32
-    // let value = f32::from_bits(combined_value);
+    let value = AIN0_BINARY.read(&mut ctx).await.unwrap();
+    println!("AIN0_BINARY: {value:?}");
+
+    let value = AIN0.read(&mut ctx).await.unwrap();
+    println!("AIN0: {value:?}");
 
     let value = AIN1.read(&mut ctx).await.unwrap();
+    println!("AIN1: {value:?}");
 
-    println!("The data is {value:?}");
+    let value = AIN1_BINARY.read(&mut ctx).await.unwrap();
+    println!("AIN1_BINARY: {value:?}");
 
-    // let value = TEST.read(&mut ctx).await;
+    let value = AIN2_BINARY.read(&mut ctx).await.unwrap();
+    println!("AIN2_BINARY: {value:?}");
 
-    // println!("TEST: {value:?}");
+    let value = AIN2.read(&mut ctx).await.unwrap();
+    println!("AIN2: {value:?}");
+
+    let value = TEST.read(&mut ctx).await.unwrap();
+    println!("TEST: {value:?}");
 
     let value = TEST_FLOAT32.read(&mut ctx).await.unwrap();
 
@@ -52,6 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let value = TEST_UINT32.read(&mut ctx).await.unwrap();
 
     println!("TEST_UINT32: {value:?}");
+
+    let value = ETHERNET_MAC.read(&mut ctx).await.unwrap();
+    println!("ETHERNET_MAC: {value:?}");
+
+    let value = WIFI_MAC.read(&mut ctx).await.unwrap();
+    println!("WIFI_MAC: {value:?}");
+
+    let value = WIFI_SSID_DEFAULT.read_string(&mut ctx, 20).await.unwrap();
+    println!("WIFI_SSID_DEFAULT: {value:?}");
 
     //test get cwd
     FILE_IO_DIR_CURRENT.write(&mut ctx, 1).await.unwrap();
