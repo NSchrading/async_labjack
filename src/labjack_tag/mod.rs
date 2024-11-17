@@ -1,21 +1,35 @@
+//! structs and traits for Labjack Tags.
+
+use crate::client::CustomReader;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
-use crate::modbus_feedback::mbfb::{CustomReader, ModbusFeedbackFrame};
+use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
+use anyhow::Result;
 use bytes::{Buf, Bytes, BytesMut};
+use enum_dispatch::enum_dispatch;
 use std::cmp;
 use std::marker::PhantomData;
+use std::str;
 use tokio_modbus::client::{Context, Writer};
 use tokio_modbus::prelude::Reader;
-pub struct CanRead;
-pub struct CanWrite;
-pub struct CannotRead;
-pub struct CannotWrite;
-use anyhow::Result;
-use enum_dispatch::enum_dispatch;
-use std::str;
 
+/// Tags with this type can be read and will have `read` implementations.
+pub struct CanRead;
+
+/// Tags with this type can be written and will have `write` implementations.
+pub struct CanWrite;
+
+/// Tags with this type cannot be read, but may be writeable if they have `CanWrite`.
+pub struct CannotRead;
+
+/// Tags with this type cannot be written, but may be readable if they have `CanRead`.
+pub struct CannotWrite;
 /// A generic struct holding the address of a labjack tag (register). Because
 /// register is an overloaded term that could mean an individual modbus register, we refer to
 /// the complete value containing 1 or more underlying modbus registers as a tag.
+/// T is the type of data that the tag holds. Currently one of `u16`, `u32`, `u64`, `i32`, `f32`,
+/// or `Bytes`.
+/// R is `CanRead` or `CannotRead`
+/// W is `CanWrite` or `CannotWrite`
 pub struct LabjackTag<T, R, W> {
     pub address: u16,
     _phantom_data: PhantomData<(T, R, W)>, // To differentiate types at compile time
@@ -42,6 +56,7 @@ impl<T, R, W> LabjackTag<T, R, W> {
 }
 
 impl<W> LabjackTag<u64, CanRead, W> {
+    /// Read the tag asynchronously and return a future holding a Result<u64>.
     pub async fn read(self, context: &mut Context) -> Result<u64> {
         // fetch the data, it is returned in big endian
         let data: Vec<u16> = context.read_input_registers(self.address, 4).await??;
@@ -54,6 +69,7 @@ impl<W> LabjackTag<u64, CanRead, W> {
 }
 
 impl<R> LabjackTag<f32, R, CanWrite> {
+    /// Write an f32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, context: &mut Context, val: f32) -> Result<()> {
         Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
@@ -62,6 +78,7 @@ impl<R> LabjackTag<f32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<f32, CanRead, W> {
+    /// Read the tag asynchronously and return a future holding a Result<f32>.
     pub async fn read(self, context: &mut Context) -> Result<f32> {
         // fetch the data, it is returned in big endian
         let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
@@ -73,8 +90,8 @@ impl<W> LabjackTag<f32, CanRead, W> {
 }
 
 impl<R> LabjackTag<i32, R, CanWrite> {
+    /// Write an i32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, context: &mut Context, val: i32) -> Result<()> {
-        // fetch the data, it is returned in big endian
         Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
             .await??)
@@ -82,6 +99,7 @@ impl<R> LabjackTag<i32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<i32, CanRead, W> {
+    /// Read the tag asynchronously and return a future holding a Result<i32>.
     pub async fn read(self, context: &mut Context) -> Result<i32> {
         // fetch the data, it is returned in big endian
         let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
@@ -93,8 +111,8 @@ impl<W> LabjackTag<i32, CanRead, W> {
 }
 
 impl<R> LabjackTag<u32, R, CanWrite> {
+    /// Write a u32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, context: &mut Context, val: u32) -> Result<()> {
-        // fetch the data, it is returned in big endian
         Ok(context
             .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
             .await??)
@@ -102,6 +120,7 @@ impl<R> LabjackTag<u32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<u32, CanRead, W> {
+    /// Read the tag asynchronously and return a future holding a Result<u32>.
     pub async fn read(self, context: &mut Context) -> Result<u32> {
         // fetch the data, it is returned in big endian
         let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
@@ -111,6 +130,7 @@ impl<W> LabjackTag<u32, CanRead, W> {
 }
 
 impl<W> LabjackTag<u16, CanRead, W> {
+    /// Read the tag asynchronously and return a future holding a Result<u16>.
     pub async fn read(self, context: &mut Context) -> Result<u16> {
         // fetch the data, it is returned in big endian
         let data: Vec<u16> = context.read_input_registers(self.address, 1).await??;
@@ -119,13 +139,17 @@ impl<W> LabjackTag<u16, CanRead, W> {
 }
 
 impl<R> LabjackTag<u16, R, CanWrite> {
+    /// Write a u16 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, context: &mut Context, val: u16) -> Result<()> {
-        // fetch the data, it is returned in big endian
         Ok(context.write_single_register(self.address, val).await??)
     }
 }
 
 impl<W> LabjackTag<Bytes, CanRead, W> {
+    /// Read a specified number of bytes from the tag asynchronously and return a future holding a
+    /// Result<Bytes>. This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
+    /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
+    /// many bytes need to be read.
     pub async fn read(self, context: &mut Context, num_bytes: u32) -> Result<Bytes> {
         // Max ethernet packet size is 1040 bytes, keeping this at 1020 bytes accounts for overhead
         // from the MBFB response packet
@@ -184,6 +208,11 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
         Ok(data_bytes.freeze())
     }
 
+    /// Read a specified number of bytes from the tag asynchronously and return a future holding a
+    /// Result<String>. The resultant String must be valid utf8.
+    /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
+    /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
+    /// many bytes need to be read.
     pub async fn read_string(self, context: &mut Context, len: u32) -> Result<String> {
         let mut bytes = self.read(context, len).await?;
         // The bytes returned will have a null byte (c-string)
@@ -192,6 +221,11 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
         Ok(str_slice.to_string())
     }
 
+    /// Read a specified number of bytes from the file tag asynchronously and return a future holding a
+    /// Result<String>. The resultant String must be valid utf8.
+    /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
+    /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
+    /// many bytes need to be read.
     pub async fn read_file(self, context: &mut Context, len: u32) -> Result<String> {
         let bytes = self.read(context, len).await?;
         let str_slice = str::from_utf8(&bytes)?;
@@ -200,29 +234,53 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
 }
 
 impl<R> LabjackTag<Bytes, R, CanWrite> {
+    /// Write the specified Bytes to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, context: &mut Context, val: Bytes) -> Result<()> {
-        // fetch the data, it is returned in big endian
         Ok(context
             .write_multiple_registers(self.address, &u8_to_u16_vec(&val)?)
             .await??)
     }
 }
 
+/// All labjack tags are Addressable, meaning they have an address and a certain number of
+/// registers holding their value. These traits exist so that we can pass a dynamic vector
+/// of varying labjack tags to `ctx.read_tags` or `ctx.write_tags` and then either return
+/// the appropriate `HydratedTagValue` or write the appropriate values to the correct registers.
 #[enum_dispatch]
-pub trait Addressable {
+pub(crate) trait Addressable {
+    /// Return the register count expected of the Addressable labjack tag.
     fn register_count(&self) -> u8;
+
+    /// Return the address expected of the Addressable labjack tag.
     fn address(&self) -> u16;
 }
 
+/// Any Readable labjack tag is capable of being read and turned into a HydratedTagValue.
 #[enum_dispatch]
-pub trait Readable: Addressable {
+pub(crate) trait Readable: Addressable {
+    /// Take bytes and convert them into the type specified by the Readable labjack tag,
+    /// returning a HydratedTagValue.
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue;
 }
 
-#[enum_dispatch]
-pub trait Writable: Addressable {}
+impl<R, W> Addressable for LabjackTag<u64, R, W> {
+    /// 64 bit labjack tags have 4 16-bit registers.
+    fn register_count(&self) -> u8 {
+        4
+    }
+    fn address(&self) -> u16 {
+        self.address
+    }
+}
+
+impl<W> Readable for LabjackTag<u64, CanRead, W> {
+    fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue {
+        HydratedTagValue::U64(bytes.get_u64())
+    }
+}
 
 impl<R, W> Addressable for LabjackTag<f32, R, W> {
+    /// 32 bit labjack tags have 2 16-bit registers.
     fn register_count(&self) -> u8 {
         2
     }
@@ -237,9 +295,8 @@ impl<W> Readable for LabjackTag<f32, CanRead, W> {
     }
 }
 
-impl<R> Writable for LabjackTag<f32, R, CanWrite> {}
-
 impl<R, W> Addressable for LabjackTag<i32, R, W> {
+    /// 32 bit labjack tags have 2 16-bit registers.
     fn register_count(&self) -> u8 {
         2
     }
@@ -254,9 +311,8 @@ impl<W> Readable for LabjackTag<i32, CanRead, W> {
     }
 }
 
-impl<R> Writable for LabjackTag<i32, R, CanWrite> {}
-
 impl<R, W> Addressable for LabjackTag<u32, R, W> {
+    /// 32 bit labjack tags have 2 16-bit registers.
     fn register_count(&self) -> u8 {
         2
     }
@@ -271,9 +327,8 @@ impl<W> Readable for LabjackTag<u32, CanRead, W> {
     }
 }
 
-impl<R> Writable for LabjackTag<u32, R, CanWrite> {}
-
 impl<R, W> Addressable for LabjackTag<u16, R, W> {
+    /// 16 bit labjack tags have 1 16-bit register.
     fn register_count(&self) -> u8 {
         1
     }
@@ -288,18 +343,20 @@ impl<W> Readable for LabjackTag<u16, CanRead, W> {
     }
 }
 
-impl<R> Writable for LabjackTag<u16, R, CanWrite> {}
-
+/// A HydratedTagValue simply holds the underlying value for a tag, e.g. a u32 for a
+/// `LabjackTag<u32, CanRead, W>`
 #[derive(Debug)]
 pub enum HydratedTagValue {
+    U64(u64),
     F32(f32),
     I32(i32),
     U32(u32),
     U16(u16),
 }
 
+/// An enum of all possible writable LabjackTags. This is used in the dynamic `ctx.write_tags`
+/// implementation. Note that this uses enum_dispatch so that we avoid dynamic dispatch with dyn.
 #[enum_dispatch(Addressable)]
-#[enum_dispatch(Writable)]
 pub enum WritableLabjackTag {
     F32WriteOnly(LabjackTag<f32, CannotRead, CanWrite>),
     F32ReadWrite(LabjackTag<f32, CanRead, CanWrite>),
@@ -314,9 +371,14 @@ pub enum WritableLabjackTag {
     U16ReadWrite(LabjackTag<u16, CanRead, CanWrite>),
 }
 
+/// An enum of all possible readable LabjackTags. This is used in the dynamic `ctx.read_tags`
+/// implementation. Note that this uses enum_dispatch so that we avoid dynamic dispatch with dyn.
 #[enum_dispatch(Addressable)]
 #[enum_dispatch(Readable)]
 pub enum ReadableLabjackTag {
+    U64ReadOnly(LabjackTag<u64, CanRead, CannotWrite>),
+    U64ReadWrite(LabjackTag<u64, CanRead, CanWrite>),
+
     F32ReadOnly(LabjackTag<f32, CanRead, CannotWrite>),
     F32ReadWrite(LabjackTag<f32, CanRead, CanWrite>),
 

@@ -6,8 +6,6 @@ name = "tokio_labjack"
 repository = "https://github.com/nschrading/tokio_labjack"
 version = "0.1.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [lib]
 name = "tokio_labjack_lib"
 path = "src/lib.rs"
@@ -25,3 +23,7 @@ env_logger = "*"
 log = "*"
 tokio = { version = "1.4", features = ["rt", "macros"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
+
+[profile.release]
+codegen-units = 1
+lto = true

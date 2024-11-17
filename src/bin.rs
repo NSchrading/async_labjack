@@ -1,6 +1,7 @@
 use bytes::Bytes;
+use tokio_labjack_lib::client::{CustomReader, CustomWriter};
 use tokio_labjack_lib::labjack_tag::HydratedTagValue;
-use tokio_labjack_lib::modbus_feedback::mbfb::{CustomReader, CustomWriter, ModbusFeedbackFrame};
+use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::{
     AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, ETHERNET_MAC, FILE_IO_DIR_CURRENT,
     FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES,
@@ -123,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             TEST_INT32.into(),
             TEST_UINT16.into(),
             TEST_UINT32.into(),
+            ETHERNET_MAC.into(),
         ])
         .await
         .unwrap()
@@ -130,10 +132,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("weird tag results: {results:?}");
 
     println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
+
+    let mut bytes_vec = 5.4321_f32.to_be_bytes().to_vec();
+    bytes_vec.extend((-314_i32).to_be_bytes());
     let mut mbfb = ModbusFeedbackFrame::new_write_frame(
         &[TEST_FLOAT32.address, TEST_INT32.address],
         &[2, 2],
-        Bytes::from(&[0x40_u8, 0xad, 0xd3, 0xc3, 0xFF, 0xFF, 0xFE, 0xC6][..]),
+        Bytes::from(bytes_vec),
     );
     ctx.write_mbfb(&mut mbfb).await.unwrap().unwrap();
 

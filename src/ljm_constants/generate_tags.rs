@@ -9,15 +9,23 @@ struct LabjackTag {
     name: String,
     register_type: String,
     readwrite: String,
+    description: String,
 }
 
 impl LabjackTag {
-    fn new(address: u16, name: String, register_type: String, readwrite: String) -> Self {
+    fn new(
+        address: u16,
+        name: String,
+        register_type: String,
+        readwrite: String,
+        description: String,
+    ) -> Self {
         LabjackTag {
             address,
             name,
             register_type,
             readwrite,
+            description,
         }
     }
 }
@@ -37,7 +45,8 @@ impl fmt::Display for LabjackTag {
 
         write!(
             f,
-            "pub const {}: LabjackTag<{}, {}, {}> = LabjackTag::new({});",
+            "/// {}\npub const {}: LabjackTag<{}, {}, {}> = LabjackTag::new({});",
+            self.description,
             self.name,
             register_type,
             if self.readwrite.contains("R") {
@@ -74,6 +83,7 @@ fn main() {
     .unwrap();
     writeln!(lib_file, "use bytes::Bytes;").unwrap();
     writeln!(lib_file).unwrap();
+    writeln!(lib_file, "pub mod client;").unwrap();
     writeln!(lib_file, "pub mod helpers;").unwrap();
     writeln!(lib_file, "pub mod labjack_tag;").unwrap();
     writeln!(lib_file, "pub mod modbus_feedback;").unwrap();
@@ -112,6 +122,12 @@ fn main() {
             .as_str()
             .expect("Register readwrite must be a string")
             .to_string();
+        let description = register
+            .get("description")
+            .expect("Each register must have a description")
+            .as_str()
+            .expect("Register description must be a string")
+            .to_string();
         if let Some(caps) = address_re.captures(&name) {
             let num_tags: u16 = caps
                 .get(1)
@@ -138,11 +154,18 @@ fn main() {
                     specific_name,
                     register_type.clone(),
                     readwrite_spec.clone(),
+                    description.clone(),
                 );
                 labjack_tags.push(labjack_tag);
             }
         } else {
-            let labjack_tag = LabjackTag::new(base_address, name, register_type, readwrite_spec);
+            let labjack_tag = LabjackTag::new(
+                base_address,
+                name,
+                register_type,
+                readwrite_spec,
+                description,
+            );
             labjack_tags.push(labjack_tag);
         }
 
