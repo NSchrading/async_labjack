@@ -1,14 +1,24 @@
 //! Additional traits for the tokio modbus Client / Context for reading and writing LabjackTags or
 //! ModbusFeedbackFrames.
+use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::labjack_tag::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
 };
+use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
+use crate::{
+    AIN0, AIN1, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
+    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0,
+    STREAM_SCANLIST_ADDRESS1, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+};
+use anyhow::bail;
 use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::iter::zip;
 use tokio_modbus::client::{Client, Context};
+use tokio_modbus::prelude::Writer;
 use tokio_modbus::prelude::{Request, Response};
 use tokio_modbus::Result;
 
@@ -52,6 +62,13 @@ pub trait CustomReader: Client {
         write_tags: &[WritableLabjackTag; N],
         tag_values: &[HydratedTagValue; N],
     ) -> Result<Vec<HydratedTagValue>>;
+
+    async fn read_stream_config(&mut self) -> Result<StreamConfig>;
+    async fn start_stream(
+        &mut self,
+        config: StreamConfig,
+        tags: Vec<ReadableLabjackTag>,
+    ) -> Result<()>;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -179,6 +196,159 @@ impl CustomReader for Context {
             result.map(|mut response| bytes_to_hydrated_tags(&mut response, read_tags))
         })
     }
+
+    async fn read_stream_config(&mut self) -> Result<StreamConfig> {
+        self.read_tags(&[
+            STREAM_SCANRATE_HZ.into(),
+            STREAM_NUM_ADDRESSES.into(),
+            STREAM_SAMPLES_PER_PACKET.into(),
+            STREAM_SETTLING_US.into(),
+            STREAM_RESOLUTION_INDEX.into(),
+            STREAM_BUFFER_SIZE_BYTES.into(),
+            STREAM_AUTO_TARGET.into(),
+            STREAM_NUM_SCANS.into(),
+        ])
+        .await
+        .map(|result| {
+            result.map(|response| {
+                assert!(response.len() == 8);
+                let scan_rate = match response[0] {
+                    HydratedTagValue::F32(val) => val,
+                    _ => panic!("scan_rate must be an F32"),
+                };
+
+                let num_addresses = match response[1] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("num_addresses must be a U32"),
+                };
+
+                let samples_per_packet = match response[2] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("samples_per_packet must be a U32"),
+                };
+
+                let settling_us = match response[3] {
+                    HydratedTagValue::F32(val) => val,
+                    _ => panic!("settling_us must be an F32"),
+                };
+
+                let resolution_index = match response[4] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("resolution_index must be a U32"),
+                };
+
+                let buffer_size_bytes = match response[5] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("buffer_size_bytes must be a U32"),
+                };
+
+                let auto_target = match response[6] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("auto_target must be a U32"),
+                };
+
+                let num_scans = match response[7] {
+                    HydratedTagValue::U32(val) => val,
+                    _ => panic!("num_scans must be a U32"),
+                };
+
+                let mut config = StreamConfigBuilder::default();
+                config
+                    .scan_rate(scan_rate)
+                    .num_addresses(num_addresses)
+                    .samples_per_packet(samples_per_packet)
+                    .settling_us(settling_us)
+                    .resolution_index(resolution_index)
+                    .buffer_size_bytes(buffer_size_bytes)
+                    .auto_target(auto_target)
+                    .num_scans(num_scans);
+                config.build().unwrap()
+            })
+        })
+    }
+
+    async fn start_stream(
+        &mut self,
+        config: StreamConfig,
+        tags: Vec<ReadableLabjackTag>,
+    ) -> Result<()> {
+        let num_registers = config.num_addresses * 2;
+
+        // assert!(tags.len() == config.num_addresses as usize);
+        // assert!(num_registers <= 255);
+
+        self.read_write_tags(
+            &[
+                STREAM_SCANRATE_HZ.into(),
+                STREAM_NUM_ADDRESSES.into(),
+                STREAM_SAMPLES_PER_PACKET.into(),
+                STREAM_SETTLING_US.into(),
+                STREAM_RESOLUTION_INDEX.into(),
+                STREAM_BUFFER_SIZE_BYTES.into(),
+                STREAM_AUTO_TARGET.into(),
+                STREAM_NUM_SCANS.into(),
+            ],
+            &[
+                STREAM_SCANRATE_HZ.into(),
+                STREAM_NUM_ADDRESSES.into(),
+                STREAM_SAMPLES_PER_PACKET.into(),
+                STREAM_SETTLING_US.into(),
+                STREAM_RESOLUTION_INDEX.into(),
+                STREAM_BUFFER_SIZE_BYTES.into(),
+                STREAM_AUTO_TARGET.into(),
+                STREAM_NUM_SCANS.into(),
+                STREAM_DATATYPE.into(),
+            ],
+            &[
+                HydratedTagValue::F32(config.scan_rate),
+                HydratedTagValue::U32(config.num_addresses),
+                HydratedTagValue::U32(config.samples_per_packet),
+                HydratedTagValue::F32(config.settling_us),
+                HydratedTagValue::U32(config.resolution_index),
+                HydratedTagValue::U32(config.buffer_size_bytes),
+                HydratedTagValue::U32(config.auto_target),
+                HydratedTagValue::U32(config.num_scans),
+                HydratedTagValue::U32(0),
+            ],
+        )
+        .await;
+
+        let mut bytes_vec = Vec::new();
+        for tag in tags {
+            bytes_vec.extend((tag.address() as u32).to_be_bytes());
+        }
+        let data_bytes = Bytes::from(bytes_vec);
+
+        self.write_multiple_registers(
+            STREAM_SCANLIST_ADDRESS0.address,
+            &u8_to_u16_vec(&data_bytes).unwrap(),
+        )
+        .await
+
+        // let mut bytes_vec = Vec::new();
+        // for tag in tags {
+        //     bytes_vec.extend((tag.address() as u32).to_be_bytes());
+        // }
+        // let data_bytes = Bytes::from(bytes_vec);
+        // println!("{:?}", data_bytes);
+
+        // let mut bytes = BytesMut::with_capacity(4 + data_bytes.len());
+        // bytes.put_u8(1);
+        // bytes.put_u16(STREAM_SCANLIST_ADDRESS0.address);
+        // bytes.extend(data_bytes);
+        // println!("{:?}", bytes);
+        // self.read_write_frame_bytes(bytes.freeze()).await
+    }
+
+    // //Starting address is 4016.
+    // if(readMultipleRegistersTCP(sock, 4016, 2, data) < 0)
+    // 	return -1;
+    // bytesToUint32(data, autoTarget); //Address = 4016 (STREAM_AUTO_TARGET)
+
+    // //Starting address is 4020.
+    // if(readMultipleRegistersTCP(sock, 4020, 2, data) < 0)
+    // 	return -1;
+    // bytesToUint32(data, numScans); //Address = 4020 (STREAM_NUM_SCANS)
 }
 
 /// An extra trait for the tokio_modbus Client, allowing for writes of higher

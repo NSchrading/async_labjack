@@ -5,6 +5,7 @@ use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use anyhow::Result;
 use bytes::{Buf, Bytes, BytesMut};
+use derive_builder::Builder;
 use enum_dispatch::enum_dispatch;
 use std::cmp;
 use std::marker::PhantomData;
@@ -390,4 +391,25 @@ pub enum ReadableLabjackTag {
 
     U16ReadOnly(LabjackTag<u16, CanRead, CannotWrite>),
     U16ReadWrite(LabjackTag<u16, CanRead, CanWrite>),
+}
+
+#[derive(Builder, Debug, PartialEq)]
+pub struct StreamConfig {
+    /// Scans per second. Samples per second = scanRate * numAddresses
+    #[builder(default = 1000.0)]
+    pub scan_rate: f32,
+    /// Required field. Number of addresses to include in the scan list.
+    pub num_addresses: u32,
+    #[builder(default = 512)]
+    pub samples_per_packet: u32,
+    #[builder(default = 0.0)]
+    pub settling_us: f32,
+    #[builder(default = 0)]
+    pub resolution_index: u32,
+    #[builder(default = 0)]
+    pub buffer_size_bytes: u32,
+    #[builder(default = 1)]
+    pub auto_target: u32,
+    #[builder(default = 0)]
+    pub num_scans: u32,
 }

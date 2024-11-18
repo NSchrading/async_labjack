@@ -963,6 +963,8 @@ pub const STREAM_BUFFER_SIZE_BYTES: LabjackTag<u32, CanRead, CanWrite> = Labjack
 pub const STREAM_CLOCK_SOURCE: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(4014);
 /// Controls where data will be sent. Value is a bitmask. bit 0: 1 = Send to Ethernet 702 sockets, bit 1: 1 = Send to USB, bit 4: 1 = Command-Response mode. All other bits are reserved.
 pub const STREAM_AUTO_TARGET: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(4016);
+/// Must be written with the value 0 for streaming.
+pub const STREAM_DATATYPE: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(4018);
 /// The number of scans to run before automatically stopping (stream-burst). 0 = run continuously. Limit for STREAM_NUM_SCANS is 2^32-1, but if the host is not reading data as fast as it is acquired you also need to consider STREAM_BUFFER_SIZE_BYTES.
 pub const STREAM_NUM_SCANS: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(4020);
 /// The number of pulses per stream scan when using an external clock.

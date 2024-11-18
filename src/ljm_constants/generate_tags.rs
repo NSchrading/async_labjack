@@ -174,6 +174,15 @@ fn main() {
         // pub const MA_PKT_SIZE_ETH_502: LabjackTag<u16, CanRead, CanWrite> = LabjackTag::new(49910);
     }
 
+    let labjack_tag = LabjackTag::new(
+        4018,
+        "STREAM_DATATYPE".to_string(),
+        "UINT32".to_string(),
+        "RW".to_string(),
+        "Must be written with the value 0 for streaming.".to_string(),
+    );
+    labjack_tags.push(labjack_tag);
+
     labjack_tags.sort();
     for labjack_tag in &labjack_tags {
         writeln!(lib_file, "{}", labjack_tag).unwrap();

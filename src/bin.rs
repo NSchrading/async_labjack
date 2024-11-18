@@ -1,12 +1,18 @@
+use bytes::Buf;
 use bytes::Bytes;
+use std::{thread, time};
 use tokio_labjack_lib::client::{CustomReader, CustomWriter};
-use tokio_labjack_lib::labjack_tag::HydratedTagValue;
+use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::{
-    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, ETHERNET_MAC, FILE_IO_DIR_CURRENT,
-    FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES,
-    FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ, FILE_IO_SIZE_BYTES, TEST,
-    TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
+    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, CORE_TIMER, DAC0, ETHERNET_MAC,
+    FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
+    FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
+    FILE_IO_SIZE_BYTES, FIO0, FIO1, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
+    STREAM_DATA_CR, STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES,
+    STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ,
+    STREAM_SETTLING_US, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC,
+    WIFI_SSID_DEFAULT,
 };
 
 #[tokio::main(flavor = "current_thread")]
@@ -17,6 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut ctx = tcp::connect(socket_addr).await?;
+
+    DAC0.write(&mut ctx, 3.333).await.unwrap();
 
     let value = AIN0_BINARY.read(&mut ctx).await.unwrap();
     println!("AIN0_BINARY: {value:?}");
@@ -92,26 +100,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("path: {path:?}");
     println!("file byte size: {num_file_content_bytes:?}");
 
-    // test read a file
-    let filename = Bytes::from_static(b"/log1.csv\0");
-    let fname_num_bytes = filename.len();
-    println!("fname bytes: {filename:?}");
-    FILE_IO_PATH_WRITE_LEN_BYTES
-        .write(&mut ctx, fname_num_bytes as u32)
-        .await
-        .unwrap();
-    println!("wrote fname_num_bytes: {fname_num_bytes:?}");
-    FILE_IO_PATH_WRITE.write(&mut ctx, filename).await.unwrap();
-    println!("wrote filename to FILE_IO_PATH_WRITE");
-    FILE_IO_OPEN.write(&mut ctx, 1).await.unwrap();
-    println!("wrote 1 to FILE_IO_OPEN");
-    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await.unwrap();
-    println!("number of bytes to read from file: {num_file_content_bytes:?}");
-    let file_data = FILE_IO_READ
-        .read_file(&mut ctx, num_file_content_bytes)
-        .await
-        .unwrap();
-    println!("file_data: {file_data:?}");
+    // // test read a file
+    // let filename = Bytes::from_static(b"/log1.csv\0");
+    // let fname_num_bytes = filename.len();
+    // println!("fname bytes: {filename:?}");
+    // FILE_IO_PATH_WRITE_LEN_BYTES
+    //     .write(&mut ctx, fname_num_bytes as u32)
+    //     .await
+    //     .unwrap();
+    // println!("wrote fname_num_bytes: {fname_num_bytes:?}");
+    // FILE_IO_PATH_WRITE.write(&mut ctx, filename).await.unwrap();
+    // println!("wrote filename to FILE_IO_PATH_WRITE");
+    // FILE_IO_OPEN.write(&mut ctx, 1).await.unwrap();
+    // println!("wrote 1 to FILE_IO_OPEN");
+    // let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut ctx).await.unwrap();
+    // println!("number of bytes to read from file: {num_file_content_bytes:?}");
+    // let file_data = FILE_IO_READ
+    //     .read_file(&mut ctx, num_file_content_bytes)
+    //     .await
+    //     .unwrap();
+    // println!("file_data: {file_data:?}");
 
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[0], &[254]);
     let rsp = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
@@ -190,6 +198,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap()
         .unwrap();
     println!("weird tag results: {results:?}");
+
+    let results = ctx.read_stream_config().await.unwrap().unwrap();
+
+    // scanRate = 1000.0f; //Scans per second. Samples per second = scanRate * numAddresses
+    // numAddresses = NUM_ADDRESSES;
+    // samplesPerPacket = STREAM_MAX_SAMPLES_PER_PACKET_TCP;  //Max is 512. For better throughput set this to high values.
+    // settling = 10.0; //10 microseconds
+    // resolutionIndex = 0; //Default
+    // bufferSizeBytes = 0; //Default
+    // autoTarget = STREAM_TARGET_ETHERNET; //Stream target is Ethernet.
+    // numScans = 0; //0 = Run continuously.
+
+    println!("stream config: {results:?}");
+
+    let new_stream_config = StreamConfigBuilder::default()
+        .num_addresses(2)
+        .scan_rate(100.0)
+        .num_scans(5)
+        .auto_target(16)
+        .buffer_size_bytes(4096)
+        .build()
+        .unwrap();
+
+    let results = ctx
+        .start_stream(
+            new_stream_config,
+            vec![
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+            ],
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    println!("stream config: {results:?}");
+
+    STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
+
+    thread::sleep(time::Duration::from_secs(5));
+
+    let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[STREAM_DATA_CR.address], &[14]);
+    let mut data = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
+    println!("{:?}", data);
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+    println!("{:?}", data.get_u16());
+
+    STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
 
     println!("Disconnecting");
     ctx.disconnect().await?;
