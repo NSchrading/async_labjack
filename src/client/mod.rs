@@ -1,16 +1,21 @@
 //! Additional traits for the tokio modbus Client / Context for reading and writing LabjackTags or
 //! ModbusFeedbackFrames.
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
+use crate::helpers::calibrations::{
+    AinCalibrationBuilder, DacCalibrationBuilder, T7Calibrations, T7CalibrationsBuilder,
+    TemperatureCalibrationBuilder,
+};
 use crate::labjack_tag::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
 };
 use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::{
-    AIN0, AIN1, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
-    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
-    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0,
-    STREAM_SCANLIST_ADDRESS1, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    AIN0, AIN1, DGT_CHANGE_LOG_INTERVAL_INDEX, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DEBUG_GET_SELF_INDEX,
+    STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX,
+    STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0, STREAM_SCANLIST_ADDRESS1,
+    STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
 use anyhow::bail;
 use async_trait::async_trait;
@@ -69,6 +74,8 @@ pub trait CustomReader: Client {
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
     ) -> Result<()>;
+
+    async fn read_calibrations(&mut self) -> Result<T7Calibrations>;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -324,31 +331,86 @@ impl CustomReader for Context {
             &u8_to_u16_vec(&data_bytes).unwrap(),
         )
         .await
-
-        // let mut bytes_vec = Vec::new();
-        // for tag in tags {
-        //     bytes_vec.extend((tag.address() as u32).to_be_bytes());
-        // }
-        // let data_bytes = Bytes::from(bytes_vec);
-        // println!("{:?}", data_bytes);
-
-        // let mut bytes = BytesMut::with_capacity(4 + data_bytes.len());
-        // bytes.put_u8(1);
-        // bytes.put_u16(STREAM_SCANLIST_ADDRESS0.address);
-        // bytes.extend(data_bytes);
-        // println!("{:?}", bytes);
-        // self.read_write_frame_bytes(bytes.freeze()).await
     }
 
-    // //Starting address is 4016.
-    // if(readMultipleRegistersTCP(sock, 4016, 2, data) < 0)
-    // 	return -1;
-    // bytesToUint32(data, autoTarget); //Address = 4016 (STREAM_AUTO_TARGET)
+    async fn read_calibrations(&mut self) -> Result<T7Calibrations> {
+        let cal_constant_starting_address: u32 = 0x3C4000;
 
-    // //Starting address is 4020.
-    // if(readMultipleRegistersTCP(sock, 4020, 2, data) < 0)
-    // 	return -1;
-    // bytesToUint32(data, numScans); //Address = 4020 (STREAM_NUM_SCANS)
+        // Write the calibration constant starting address to INTERNAL_FLASH_READ_POINTER
+        // then read all 82 registers (164 bytes) of calibration constants.
+        let mut mbfb = ModbusFeedbackFrame::new(
+            &[INTERNAL_FLASH_READ.address],
+            &[INTERNAL_FLASH_READ_POINTER.address],
+            &[82],
+            &[2],
+            Bytes::from(cal_constant_starting_address.to_be_bytes().to_vec()),
+        );
+        self.read_write_mbfb(&mut mbfb).await.map(|result| {
+            result.map(|mut response| {
+                assert!(
+                    response.len() == 164,
+                    "Expected to receive 164 bytes of data, but received {} bytes instead.",
+                    response.len()
+                );
+
+                let mut t7_cals = T7CalibrationsBuilder::default().build().unwrap();
+
+                for cal_idx in 0..8 {
+                    let binary_center = response.get_f32();
+                    let positive_slope = response.get_f32();
+                    let negative_slope = response.get_f32();
+                    let voltage_offset = response.get_f32();
+                    let ain_cal = AinCalibrationBuilder::default()
+                        .binary_center(binary_center)
+                        .positive_slope(positive_slope)
+                        .negative_slope(negative_slope)
+                        .voltage_offset(voltage_offset)
+                        .build()
+                        .unwrap();
+                    match cal_idx {
+                        0 => t7_cals.hs_gain_1_ain_cal = ain_cal,
+                        1 => t7_cals.hs_gain_10_ain_cal = ain_cal,
+                        2 => t7_cals.hs_gain_100_ain_cal = ain_cal,
+                        3 => t7_cals.hs_gain_1000_ain_cal = ain_cal,
+                        4 => t7_cals.hr_gain_1_ain_cal = ain_cal,
+                        5 => t7_cals.hr_gain_10_ain_cal = ain_cal,
+                        6 => t7_cals.hr_gain_100_ain_cal = ain_cal,
+                        7 => t7_cals.hr_gain_1000_ain_cal = ain_cal,
+                        _ => unreachable!("cal_idx should max out at 7"),
+                    }
+                }
+
+                for cal_idx in 0..2 {
+                    let slope = response.get_f32();
+                    let offset = response.get_f32();
+                    let dac_cal = DacCalibrationBuilder::default()
+                        .slope(slope)
+                        .offset(offset)
+                        .build()
+                        .unwrap();
+                    match cal_idx {
+                        0 => t7_cals.dac0_cal = dac_cal,
+                        1 => t7_cals.dac1_cal = dac_cal,
+                        _ => unreachable!("cal_idx should max out at 1"),
+                    }
+                }
+
+                let t_slope = response.get_f32();
+                let t_offset = response.get_f32();
+                let temperature_cal = TemperatureCalibrationBuilder::default()
+                    .slope(t_slope)
+                    .offset(t_offset)
+                    .build()
+                    .unwrap();
+                t7_cals.temperature_cal = temperature_cal;
+                t7_cals.i_source_10u = response.get_f32();
+                t7_cals.i_source_200u = response.get_f32();
+                t7_cals.ain_bias_current = response.get_f32();
+
+                t7_cals
+            })
+        })
+    }
 }
 
 /// An extra trait for the tokio_modbus Client, allowing for writes of higher

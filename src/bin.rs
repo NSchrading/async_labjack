@@ -2,17 +2,19 @@ use bytes::Buf;
 use bytes::Bytes;
 use std::{thread, time};
 use tokio_labjack_lib::client::{CustomReader, CustomWriter};
+use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
+use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
 use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::{
     AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, CORE_TIMER, DAC0, ETHERNET_MAC,
     FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
-    FILE_IO_SIZE_BYTES, FIO0, FIO1, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
-    STREAM_DATA_CR, STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES,
-    STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ,
-    STREAM_SETTLING_US, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC,
-    WIFI_SSID_DEFAULT,
+    FILE_IO_SIZE_BYTES, FIO0, FIO1, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR,
+    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
 };
 
 #[tokio::main(flavor = "current_thread")]
@@ -222,13 +224,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     let results = ctx
-        .start_stream(
-            new_stream_config,
-            vec![
-                STREAM_DEBUG_GET_SELF_INDEX.into(),
-                STREAM_DEBUG_GET_SELF_INDEX.into(),
-            ],
-        )
+        .start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
         .await
         .unwrap()
         .unwrap();
@@ -240,23 +236,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[STREAM_DATA_CR.address], &[14]);
     let mut data = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
+
+    let default_cal = AinCalibrationBuilder::default().build().unwrap();
     println!("{:?}", data);
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
-    println!("{:?}", data.get_u16());
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
+    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
 
     STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
+
+    let t7_cal = ctx.read_calibrations().await.unwrap().unwrap();
+    println!("{t7_cal:?}");
 
     println!("Disconnecting");
     ctx.disconnect().await?;
