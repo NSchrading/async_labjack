@@ -408,6 +408,11 @@ pub struct StreamConfig {
     pub resolution_index: u32,
     #[builder(default = 0)]
     pub buffer_size_bytes: u32,
+    /// Controls where data will be sent. Value is a bitmask.
+    /// bit 0: 1 = Send to Ethernet 702 sockets,
+    /// bit 1: 1 = Send to USB,
+    /// bit 4: 1 = Command-Response mode.
+    /// All other bits are reserved.
     #[builder(default = 1)]
     pub auto_target: u32,
     #[builder(default = 0)]

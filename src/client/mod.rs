@@ -12,15 +12,17 @@ use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::{
     AIN0, AIN1, DGT_CHANGE_LOG_INTERVAL_INDEX, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
-    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DEBUG_GET_SELF_INDEX,
-    STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX,
-    STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0, STREAM_SCANLIST_ADDRESS1,
-    STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR,
+    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0,
+    STREAM_SCANLIST_ADDRESS1, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
+use anyhow;
 use anyhow::bail;
 use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
+use std::cmp;
 use std::iter::zip;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::Writer;
@@ -76,6 +78,16 @@ pub trait CustomReader: Client {
     ) -> Result<()>;
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations>;
+
+    /// Attempt to read num_samples stream samples from the STREAM_DATA_CR stream buffer.
+    /// If there are fewer samples in the buffer than num_samples, you will get back
+    /// that smaller amount. If there are more samples in the buffer than num_samples, you
+    /// will get back exactly num_samples and the remaining samples in the buffer can be read
+    /// later. The values in the returned vector are interleaved according to the current
+    /// streaming configuration. For example, if you are streaming AIN0 and AIN1, the first
+    /// value will be the first sample of AIN0, the second will be the first sample for AIN1,
+    /// the third will be the second sample of AIN0, etc.
+    async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>>;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -356,9 +368,9 @@ impl CustomReader for Context {
                 let mut t7_cals = T7CalibrationsBuilder::default().build().unwrap();
 
                 for cal_idx in 0..8 {
-                    let binary_center = response.get_f32();
                     let positive_slope = response.get_f32();
                     let negative_slope = response.get_f32();
+                    let binary_center = response.get_f32();
                     let voltage_offset = response.get_f32();
                     let ain_cal = AinCalibrationBuilder::default()
                         .binary_center(binary_center)
@@ -410,6 +422,47 @@ impl CustomReader for Context {
                 t7_cals
             })
         })
+    }
+
+    async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>> {
+        // First 4 registers are:
+        // Bytes 8-9: Number of samples in this read
+        // Bytes 10-11: Backlog Bytes
+        // Bytes 12-13: Status Code
+        // Byte 14-15: Additional status information
+
+        let mut data = Vec::with_capacity(num_samples as usize);
+        let mut num_samples_to_read = num_samples;
+        let mut more_data_available = true;
+
+        while num_samples_to_read > 0 && more_data_available {
+            let num_registers_to_read = cmp::min(4 + num_samples_to_read, 255) as u8;
+            let num_registers_to_read_ref = &[num_registers_to_read];
+
+            let mut mbfb = ModbusFeedbackFrame::new_read_frame(
+                &[STREAM_DATA_CR.address],
+                num_registers_to_read_ref,
+            );
+            let mut resultant_bytes = self.read_mbfb(&mut mbfb).await??;
+            let num_samples_returned = resultant_bytes.get_u16();
+            let backlog_bytes = resultant_bytes.get_u16();
+            let status_code = resultant_bytes.get_u16();
+            let additional_status_info = resultant_bytes.get_u16();
+
+            log::debug!(
+                "num_samples_returned: {num_samples_returned:?}, backlog_bytes: {backlog_bytes:?}, status_code: {status_code:?}, additional_status_info: {additional_status_info:?}"
+            );
+
+            for _ in 0..num_samples_returned {
+                data.push(resultant_bytes.get_u16());
+            }
+            more_data_available = backlog_bytes > 0;
+
+            num_samples_to_read = num_samples_to_read.saturating_sub(num_samples_returned);
+            log::debug!("remaining desired sample reads: {num_samples_to_read:?}, more_data_available: {more_data_available:?}");
+        }
+
+        Ok(data)
     }
 }
 

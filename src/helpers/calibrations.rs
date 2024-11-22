@@ -37,6 +37,9 @@ pub struct TemperatureCalibration {
     pub offset: f32,
 }
 
+/// All calibration constants for the T7.
+/// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
+/// Defaults to the nominal calibrations.
 #[derive(Builder, Debug, PartialEq)]
 pub struct T7Calibrations {
     #[builder(default = AinCalibrationBuilder::default().build().unwrap())]

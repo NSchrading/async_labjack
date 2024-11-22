@@ -22,7 +22,7 @@ derive_builder = "*"
 enum_dispatch = "*"
 env_logger = "*"
 log = "*"
-tokio = { version = "1.4", features = ["rt", "macros"] }
+tokio = { version = "1.4", features = ["rt-multi-thread", "macros", "time"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
 
 [profile.release]

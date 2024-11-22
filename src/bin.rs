@@ -1,6 +1,11 @@
 use bytes::Buf;
 use bytes::Bytes;
+use std::io;
 use std::{thread, time};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
+use tokio::time::{sleep, Duration};
 use tokio_labjack_lib::client::{CustomReader, CustomWriter};
 use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
 use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
@@ -17,7 +22,7 @@ use tokio_labjack_lib::{
     TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
 };
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main()]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use tokio_modbus::prelude::*;
     env_logger::init();
@@ -25,6 +30,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut ctx = tcp::connect(socket_addr).await?;
+
+    if let Err(e) = STREAM_ENABLE.write(&mut ctx, 0).await {
+        log::debug!("{e}");
+    }
 
     DAC0.write(&mut ctx, 3.333).await.unwrap();
 
@@ -217,9 +226,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let new_stream_config = StreamConfigBuilder::default()
         .num_addresses(2)
         .scan_rate(100.0)
-        .num_scans(5)
-        .auto_target(16)
+        .num_scans(200)
+        .auto_target(1)
         .buffer_size_bytes(4096)
+        .samples_per_packet(2)
         .build()
         .unwrap();
 
@@ -232,28 +242,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
 
-    thread::sleep(time::Duration::from_secs(5));
-
-    let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[STREAM_DATA_CR.address], &[14]);
-    let mut data = ctx.read_mbfb(&mut mbfb).await.unwrap().unwrap();
-
-    let default_cal = AinCalibrationBuilder::default().build().unwrap();
-    println!("{:?}", data);
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-    println!("{:?}", ain_binary_to_volts(data.get_u16(), &default_cal));
-
-    STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
-
     let t7_cal = ctx.read_calibrations().await.unwrap().unwrap();
     println!("{t7_cal:?}");
+
+    // let data = ctx.read_stream_cr(2000).await.unwrap();
+    // for ain_value in data {
+    //     println!(
+    //         "{:?}",
+    //         ain_binary_to_volts(ain_value, &t7_cal.hs_gain_1_ain_cal)
+    //     );
+    // }
+
+    let mut stream = TcpStream::connect("192.168.42.100:702").await?;
+
+    tokio::spawn(async move {
+        let mut buf = [0; 256];
+        loop {
+            stream.read_exact(&mut buf).await;
+            println!("Received: {:?}", buf);
+        }
+    });
+
+    println!("sleeping before disconnecting...");
+    sleep(Duration::from_secs(5)).await;
+
+    STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
 
     println!("Disconnecting");
     ctx.disconnect().await?;
