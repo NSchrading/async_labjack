@@ -87,6 +87,13 @@ pub trait CustomReader: Client {
     /// streaming configuration. For example, if you are streaming AIN0 and AIN1, the first
     /// value will be the first sample of AIN0, the second will be the first sample for AIN1,
     /// the third will be the second sample of AIN0, etc.
+    /// Some streamable registers (e.g. DIO4_EF_READ_A) have 32-bit data.
+    /// When streaming a register that produces 32-bit data, the lower 16 bits (LSW) will be
+    /// returned and the upper 16 bits (MSW) will be saved in STREAM_DATA_CAPTURE_16.
+    /// To get the full 32-bit value, add STREAM_DATA_CAPTURE_16 to the stream scan list after any
+    /// applicable 32-bit register, then combine the two values in software
+    /// (LSW + 65536*MSW). Note that STREAM_DATA_CAPTURE_16 may be placed in multiple locations in
+    /// the scan list.
     async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>>;
 }
 

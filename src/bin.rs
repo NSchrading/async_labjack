@@ -12,14 +12,15 @@ use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibrati
 use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::{
-    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, CORE_TIMER, DAC0, ETHERNET_MAC,
+    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, DAC0, ETHERNET_MAC,
     FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
     FILE_IO_SIZE_BYTES, FIO0, FIO1, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
-    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR,
-    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
-    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
-    TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CAPTURE_16,
+    STREAM_DATA_CR, STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES,
+    STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ,
+    STREAM_SETTLING_US, SYSTEM_TIMER_20HZ, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16,
+    TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
 };
 
 #[tokio::main()]
@@ -223,50 +224,131 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("stream config: {results:?}");
 
+    // get t7 calibrations
+    let t7_cal = ctx.read_calibrations().await.unwrap().unwrap();
+    println!("{t7_cal:?}");
+
+    // Example: 200 sample stream burst writing to command response buffer
+    // reading AIN values, need to convert to voltages
     let new_stream_config = StreamConfigBuilder::default()
         .num_addresses(2)
         .scan_rate(100.0)
         .num_scans(200)
+        .auto_target(16)
+        .buffer_size_bytes(4096)
+        .build()
+        .unwrap();
+
+    ctx.start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
+        .await
+        .unwrap()
+        .unwrap();
+
+    STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
+
+    sleep(Duration::from_secs(5)).await;
+
+    let data = ctx.read_stream_cr(2000).await.unwrap();
+    for ain_value in data {
+        println!(
+            "{:?}",
+            ain_binary_to_volts(ain_value, &t7_cal.hs_gain_1_ain_cal)
+        );
+    }
+
+    STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
+    sleep(Duration::from_secs(1)).await;
+
+    // Example: infinite stream writing 2 samples out to port 702 spontaneous mode
+    let new_stream_config = StreamConfigBuilder::default()
+        .num_addresses(2)
+        .scan_rate(100.0)
+        .num_scans(0)
         .auto_target(1)
         .buffer_size_bytes(4096)
         .samples_per_packet(2)
         .build()
         .unwrap();
+    let mut stream = TcpStream::connect("192.168.42.100:702").await?;
 
-    let results = ctx
-        .start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
+    ctx.start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
         .await
         .unwrap()
         .unwrap();
-    println!("stream config: {results:?}");
 
     STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
 
-    let t7_cal = ctx.read_calibrations().await.unwrap().unwrap();
-    println!("{t7_cal:?}");
-
-    // let data = ctx.read_stream_cr(2000).await.unwrap();
-    // for ain_value in data {
-    //     println!(
-    //         "{:?}",
-    //         ain_binary_to_volts(ain_value, &t7_cal.hs_gain_1_ain_cal)
-    //     );
-    // }
-
-    let mut stream = TcpStream::connect("192.168.42.100:702").await?;
-
     tokio::spawn(async move {
-        let mut buf = [0; 256];
+        let mut header_buf = [0; 16];
         loop {
-            stream.read_exact(&mut buf).await;
-            println!("Received: {:?}", buf);
+            let result = stream.read_exact(&mut header_buf).await;
+            if let Err(e) = result {
+                println!("error reading header: {e:?}");
+            } else {
+                println!("header: {:?}", header_buf);
+                // subtract off the 10 remaining header bytes, the bytes left are all data
+                let num_bytes: u32 = (((header_buf[4] as u32) << 16) + header_buf[5] as u32) - 10;
+                println!("num_bytes: {:?}", num_bytes);
+                let mut data_buf = vec![0; num_bytes as usize];
+                let data_result = stream.read_exact(&mut data_buf).await;
+                if let Err(e) = data_result {
+                    println!("error reading data: {e:?}");
+                } else {
+                    let val_0 = u16::from_be_bytes([data_buf[0], data_buf[1]]);
+                    let val_1 = u16::from_be_bytes([data_buf[2], data_buf[3]]);
+                    println!(
+                        "{:?}",
+                        ain_binary_to_volts(val_0, &t7_cal.hs_gain_1_ain_cal)
+                    );
+                    println!(
+                        "{:?}",
+                        ain_binary_to_volts(val_1, &t7_cal.hs_gain_1_ain_cal)
+                    );
+                    //println!("Received: {:?}", data_buf);
+                }
+            }
         }
     });
 
-    println!("sleeping before disconnecting...");
-    sleep(Duration::from_secs(5)).await;
+    println!("sleeping to allow for data to stream in...");
+    sleep(Duration::from_secs(2)).await;
 
+    println!("done");
     STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
+    // sleep(Duration::from_secs(1)).await;
+
+    // // Example: reading a 32 bit value from stream
+    // // we're reading the 20Hz system timer, at a rate of 1Hz, so each read should
+    // // increase by 20
+    // let new_stream_config = StreamConfigBuilder::default()
+    //     .num_addresses(2)
+    //     .scan_rate(1.0)
+    //     .num_scans(5)
+    //     .auto_target(16)
+    //     .buffer_size_bytes(4096)
+    //     .build()
+    //     .unwrap();
+
+    // ctx.start_stream(
+    //     new_stream_config,
+    //     vec![SYSTEM_TIMER_20HZ.into(), STREAM_DATA_CAPTURE_16.into()],
+    // )
+    // .await
+    // .unwrap()
+    // .unwrap();
+
+    // STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
+
+    // sleep(Duration::from_secs(5)).await;
+
+    // let data = ctx.read_stream_cr(2000).await.unwrap();
+    // for val in data.chunks_exact(2) {
+    //     let (msb, lsb) = (val[1], val[0]);
+    //     let converted: u32 = ((msb as u32) << 16) + lsb as u32;
+    //     println!("{:?}", converted);
+    // }
+
+    // STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
 
     println!("Disconnecting");
     ctx.disconnect().await?;
