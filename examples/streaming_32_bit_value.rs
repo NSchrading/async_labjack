@@ -1,0 +1,80 @@
+use tokio::time::{sleep, Duration};
+use tokio_labjack_lib::client::CustomReader;
+use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
+use tokio_labjack_lib::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
+use tokio_modbus::prelude::*;
+
+#[tokio::main()]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
+
+    let socket_addr = "192.168.42.100:502".parse().unwrap();
+
+    let mut ctx = tcp::connect(socket_addr).await?;
+
+    const NUM_SCANS: u32 = 5;
+    const NUM_TAGS: u32 = 2;
+    const TOTAL_SAMPLES_EXPECTED: u32 = NUM_SCANS * NUM_TAGS;
+
+    // command response mode (auto_target = 16) sends data to the STREAM_DATA_CR tag
+    // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
+    let new_stream_config = StreamConfigBuilder::default()
+        .num_addresses(2)
+        .scan_rate(1.0)
+        .num_scans(NUM_SCANS)
+        .auto_target(16)
+        .build()
+        .unwrap();
+
+    // Reading a 32 bit value from stream. In order to get the MSB of the data you need to place
+    // STREAM_DATA_CAPTURE_16 after the intended 32 bit register. See
+    // https://support.labjack.com/docs/3-2-stream-mode-t-series-datasheet#id-3.2StreamMode[T-SeriesDatasheet]-16-bitor32-bitData
+    // We're reading the 20Hz system timer, at a rate of 1Hz, so each read value should increase
+    // by ~20.
+    ctx.start_stream(
+        new_stream_config,
+        vec![SYSTEM_TIMER_20HZ.into(), STREAM_DATA_CAPTURE_16.into()],
+    )
+    .await
+    .unwrap();
+
+    sleep(Duration::from_secs(5)).await;
+
+    // read the data from STREAM_DATA_CR
+    let data = ctx
+        .read_stream_cr(TOTAL_SAMPLES_EXPECTED as u16)
+        .await
+        .unwrap();
+    assert!(data.len() == TOTAL_SAMPLES_EXPECTED as usize);
+
+    let mut start = true;
+    let mut prev_val: u32 = 0;
+    const EXPECTED_TIME_DIFF: u32 = 20;
+    for val in data.chunks_exact(2) {
+        let (msb, lsb) = (val[1], val[0]);
+        let converted_32_bit_val: u32 = ((msb as u32) << 16) + lsb as u32;
+        println!("system timer 20Hz: {converted_32_bit_val:?}");
+
+        if start {
+            prev_val = converted_32_bit_val;
+            start = false;
+        } else {
+            assert!(converted_32_bit_val > prev_val);
+            let time_diff = converted_32_bit_val - prev_val;
+
+            // allow some wiggle room in the time diff in case there is jitter
+            assert!((EXPECTED_TIME_DIFF - 1..=EXPECTED_TIME_DIFF + 1).contains(&time_diff));
+            prev_val = converted_32_bit_val;
+        }
+    }
+
+    println!("All values from the stream were consumed and as expected.");
+
+    // Stream burst ends the stream automatically, but if this was not a stream burst example
+    // you should stop the stream before disconnecting.
+
+    println!("Disconnecting");
+    ctx.disconnect().await?;
+
+    Ok(())
+}

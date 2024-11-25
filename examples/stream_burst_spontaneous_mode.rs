@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio_labjack_lib::client::CustomReader;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::{STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE};
+use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
 use tokio_modbus::prelude::*;
 
 #[tokio::main()]
@@ -13,10 +13,6 @@ async fn main() {
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut ctx = tcp::connect(socket_addr).await.unwrap();
-
-    if let Err(e) = STREAM_ENABLE.write(&mut ctx, 0).await {
-        log::debug!("{e}");
-    }
 
     // Spontaneous mode (auto_target = 1) sends data to port 702
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced

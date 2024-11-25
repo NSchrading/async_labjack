@@ -1,7 +1,7 @@
 use tokio::time::{sleep, Duration};
 use tokio_labjack_lib::client::CustomReader;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::{STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE};
+use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
 use tokio_modbus::prelude::*;
 
 #[tokio::main()]
@@ -11,10 +11,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut ctx = tcp::connect(socket_addr).await?;
-
-    if let Err(e) = STREAM_ENABLE.write(&mut ctx, 0).await {
-        log::debug!("{e}");
-    }
 
     // command response mode (auto_target = 16) sends data to the STREAM_DATA_CR tag
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced

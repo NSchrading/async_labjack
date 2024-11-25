@@ -77,6 +77,7 @@ pub trait CustomReader: Client {
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
     ) -> anyhow::Result<()>;
+    async fn stop_stream(&mut self) -> anyhow::Result<()>;
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations>;
 
@@ -385,6 +386,31 @@ impl CustomReader for Context {
                 }
             } else {
                 bail!("Unexpected result from starting stream: {:?}", res[0]);
+            }
+        }
+        Ok(())
+    }
+
+    async fn stop_stream(&mut self) -> anyhow::Result<()> {
+        // end the stream - check that it was set to 0.
+        let stream_disable_result = self
+            .read_write_tags(
+                &[STREAM_ENABLE.into()],
+                &[STREAM_ENABLE.into()],
+                &[HydratedTagValue::U32(0)],
+            )
+            .await?;
+
+        if let Ok(res) = stream_disable_result {
+            if res.len() != 1 {
+                bail!("Unexpected result from ending stream: {:?}", res);
+            }
+            if let HydratedTagValue::U32(val) = res[0] {
+                if val != 0 {
+                    bail!("Unable to end stream!");
+                }
+            } else {
+                bail!("Unexpected result from ending stream: {:?}", res[0]);
             }
         }
         Ok(())
