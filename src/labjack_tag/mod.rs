@@ -400,12 +400,20 @@ pub struct StreamConfig {
     pub scan_rate: f32,
     /// Required field. Number of addresses to include in the scan list.
     pub num_addresses: u32,
+    /// max is 512
     #[builder(default = 512)]
     pub samples_per_packet: u32,
     #[builder(default = 0.0)]
     pub settling_us: f32,
     #[builder(default = 0)]
     pub resolution_index: u32,
+    /// Size of the stream data buffer in bytes. A value of 0 equates to the default value.
+    /// Must be a power of 2. Size in samples is STREAM_BUFFER_SIZE_BYTES/2.
+    /// Size in scans is (STREAM_BUFFER_SIZE_BYTES/2)/STREAM_NUM_ADDRESSES.
+    /// Changes while stream is running do not affect the currently running stream.
+    /// T8: Max size is 262144. Default size is 4096.
+    /// T7: Max size is 32768. Default size is 4096.
+    /// T4: Max size is 32768. Default size is 8192.
     #[builder(default = 0)]
     pub buffer_size_bytes: u32,
     /// Controls where data will be sent. Value is a bitmask.

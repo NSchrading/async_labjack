@@ -4,16 +4,18 @@ use std::io;
 use std::{thread, time};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
+use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use tokio_labjack_lib::client::{CustomReader, CustomWriter};
 use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
 use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
+use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::{
-    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, DAC0, ETHERNET_MAC,
-    FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
+    AIN0, AIN0_BINARY, AIN1, AIN1_BINARY, AIN2, AIN2_BINARY, DAC0, ETHERNET_IP_DEFAULT,
+    ETHERNET_MAC, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
     FILE_IO_SIZE_BYTES, FIO0, FIO1, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
     STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CAPTURE_16,
@@ -83,6 +85,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let value = ETHERNET_MAC.read(&mut ctx).await.unwrap();
     println!("ETHERNET_MAC: {value:?}");
+
+    let value = ETHERNET_IP_DEFAULT.read(&mut ctx).await.unwrap();
+    println!("ETHERNET_IP_DEFAULT: {value:?}");
 
     let value = WIFI_MAC.read(&mut ctx).await.unwrap();
     println!("WIFI_MAC: {value:?}");
@@ -241,10 +246,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     ctx.start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
         .await
-        .unwrap()
         .unwrap();
-
-    STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
 
     sleep(Duration::from_secs(5)).await;
 
@@ -259,62 +261,80 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
     sleep(Duration::from_secs(1)).await;
 
-    // Example: infinite stream writing 2 samples out to port 702 spontaneous mode
+    // Example: burst stream of 600 values writing 2 samples out to port 702 spontaneous mode
+    // let new_stream_config = StreamConfigBuilder::default()
+    //     .num_addresses(2)
+    //     .scan_rate(100.0)
+    //     .num_scans(300)
+    //     .auto_target(1)
+    //     .buffer_size_bytes(16384)
+    //     .samples_per_packet(100)
+    //     .build()
+    //     .unwrap();
+    // let mut stream = TcpStream::connect("192.168.42.100:702").await?;
+
+    // ctx.start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
+    //     .await
+    //     .unwrap()
+
+    // let (tx, mut rx) = mpsc::channel(100);
+    // tokio::spawn(async move {
+    //     if let Err(e) = process_stream(stream, tx).await {
+    //         println!("Stream processing ended in failure: {e}");
+    //     } else {
+    //         println!("Stream processing ended nominally");
+    //     }
+    // });
+    // while let Some(value) = rx.recv().await {
+    //     // Process the received values
+    //     println!("Received value: {}", value);
+    // }
+
+    // Example: continuous stream 2 samples out to port 702 spontaneous mode
+    // with 2 samples per packet for min latency
     let new_stream_config = StreamConfigBuilder::default()
         .num_addresses(2)
-        .scan_rate(100.0)
-        .num_scans(0)
+        .scan_rate(50000.0)
         .auto_target(1)
-        .buffer_size_bytes(4096)
+        .buffer_size_bytes(32768)
         .samples_per_packet(2)
         .build()
         .unwrap();
-    let mut stream = TcpStream::connect("192.168.42.100:702").await?;
+
+    let addr = "192.168.42.100:702".parse().unwrap();
+    let socket = TcpSocket::new_v4()?;
+    //socket.set_recv_buffer_size(4096).unwrap();
+    let stream = socket.connect(addr).await?;
 
     ctx.start_stream(new_stream_config, vec![AIN0.into(), AIN1.into()])
         .await
-        .unwrap()
         .unwrap();
 
-    STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
-
+    let (tx, mut rx) = mpsc::channel(100);
     tokio::spawn(async move {
-        let mut header_buf = [0; 16];
-        loop {
-            let result = stream.read_exact(&mut header_buf).await;
-            if let Err(e) = result {
-                println!("error reading header: {e:?}");
-            } else {
-                println!("header: {:?}", header_buf);
-                // subtract off the 10 remaining header bytes, the bytes left are all data
-                let num_bytes: u32 = (((header_buf[4] as u32) << 16) + header_buf[5] as u32) - 10;
-                println!("num_bytes: {:?}", num_bytes);
-                let mut data_buf = vec![0; num_bytes as usize];
-                let data_result = stream.read_exact(&mut data_buf).await;
-                if let Err(e) = data_result {
-                    println!("error reading data: {e:?}");
-                } else {
-                    let val_0 = u16::from_be_bytes([data_buf[0], data_buf[1]]);
-                    let val_1 = u16::from_be_bytes([data_buf[2], data_buf[3]]);
-                    println!(
-                        "{:?}",
-                        ain_binary_to_volts(val_0, &t7_cal.hs_gain_1_ain_cal)
-                    );
-                    println!(
-                        "{:?}",
-                        ain_binary_to_volts(val_1, &t7_cal.hs_gain_1_ain_cal)
-                    );
-                    //println!("Received: {:?}", data_buf);
-                }
-            }
+        if let Err(e) = process_stream(stream, tx).await {
+            println!("Stream processing ended in failure: {e}");
+        } else {
+            println!("Stream processing ended nominally");
         }
     });
+    while let Some(value) = rx.recv().await {
+        // Process the received values
+        // Note that value of 65535 usually indicate a gap in data due to buffer overflow
+        // Most values are firmware protected to never return this value, so this is safe to use
+        // as an indicator of buffer overflow. Check debug logs for messages about auto recovery.
+        // See https://support.labjack.com/docs/ljm-stream-configs
+        println!(
+            "Received value: {}",
+            ain_binary_to_volts(value, &t7_cal.hs_gain_1_ain_cal)
+        );
+    }
 
-    println!("sleeping to allow for data to stream in...");
-    sleep(Duration::from_secs(2)).await;
+    // println!("sleeping to allow for data to stream in...");
+    // sleep(Duration::from_secs(2)).await;
 
-    println!("done");
-    STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
+    // println!("done");
+    // STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
     // sleep(Duration::from_secs(1)).await;
 
     // // Example: reading a 32 bit value from stream
@@ -335,9 +355,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // )
     // .await
     // .unwrap()
-    // .unwrap();
-
-    // STREAM_ENABLE.write(&mut ctx, 1).await.unwrap();
 
     // sleep(Duration::from_secs(5)).await;
 
@@ -348,7 +365,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     println!("{:?}", converted);
     // }
 
-    // STREAM_ENABLE.write(&mut ctx, 0).await.unwrap();
+    if let Err(e) = STREAM_ENABLE.write(&mut ctx, 0).await {
+        log::debug!("{e}");
+    }
 
     println!("Disconnecting");
     ctx.disconnect().await?;

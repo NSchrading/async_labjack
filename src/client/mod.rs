@@ -24,6 +24,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::cmp;
 use std::iter::zip;
+use tokio::net::UdpSocket;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::Writer;
 use tokio_modbus::prelude::{Request, Response};
@@ -75,7 +76,7 @@ pub trait CustomReader: Client {
         &mut self,
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
-    ) -> Result<()>;
+    ) -> anyhow::Result<()>;
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations>;
 
@@ -297,12 +298,25 @@ impl CustomReader for Context {
         &mut self,
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
-    ) -> Result<()> {
+    ) -> anyhow::Result<()> {
+        if tags.len() != config.num_addresses as usize {
+            bail!(
+                "The number of provided tags to stream should equal num_addresses in stream config."
+            )
+        }
+
+        // Each tag address is 32 bits, which is 2 registers
         let num_registers = config.num_addresses * 2;
+        // Max number of registers to write in a single modbus function 16 call is 123.
+        // TODO: we can improve this by calling write_multiple_registers multiple times as
+        // many times as needed. The actual limit is 128 tags streaming at once.
+        if num_registers > 123 {
+            bail!(
+                "Max number of registers we can write to is 123, but desired is {}. Reduce number of tags to stream.", num_registers
+            )
+        }
 
-        // assert!(tags.len() == config.num_addresses as usize);
-        // assert!(num_registers <= 255);
-
+        // write the config values
         self.read_write_tags(
             &[
                 STREAM_SCANRATE_HZ.into(),
@@ -337,7 +351,7 @@ impl CustomReader for Context {
                 HydratedTagValue::U32(0),
             ],
         )
-        .await;
+        .await??;
 
         let mut bytes_vec = Vec::new();
         for tag in tags {
@@ -345,11 +359,35 @@ impl CustomReader for Context {
         }
         let data_bytes = Bytes::from(bytes_vec);
 
+        // write the addresses that should be streamed to STREAM_SCANLIST_ADDRESS<N>
         self.write_multiple_registers(
             STREAM_SCANLIST_ADDRESS0.address,
             &u8_to_u16_vec(&data_bytes).unwrap(),
         )
-        .await
+        .await??;
+
+        // start the stream - check that it was set to 1.
+        let stream_enable_result = self
+            .read_write_tags(
+                &[STREAM_ENABLE.into()],
+                &[STREAM_ENABLE.into()],
+                &[HydratedTagValue::U32(1)],
+            )
+            .await?;
+
+        if let Ok(res) = stream_enable_result {
+            if res.len() != 1 {
+                bail!("Unexpected result from starting stream: {:?}", res);
+            }
+            if let HydratedTagValue::U32(val) = res[0] {
+                if val != 1 {
+                    bail!("Unable to start stream!");
+                }
+            } else {
+                bail!("Unexpected result from starting stream: {:?}", res[0]);
+            }
+        }
+        Ok(())
     }
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations> {
