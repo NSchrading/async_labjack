@@ -8,6 +8,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio::time::{sleep, Duration};
+use tokio_labjack_lib::client::LabjackClient;
 use tokio_labjack_lib::client::{CustomReader, CustomWriter};
 use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
 use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
@@ -39,17 +40,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut i = 1.1;
     loop {
-        println!("Connecting");
-        let mut ctx = tcp::connect(socket_addr).await?;
+        //let mut ctx = tcp::connect(socket_addr).await?;
+
+        println!("Connecting...");
+        let mut result =
+            LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
+        while let Err(e) = result {
+            println!("Error connecting: {e:?}");
+            sleep(Duration::from_millis(1000)).await;
+            println!("Connecting...");
+            result =
+                LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
+        }
+        println!("Succesfully connected.");
+        let mut ljc = result.unwrap();
+
+        ljc.command_response_timeout = Duration::from_millis(100);
+        //let ctx = &mut ljc.context;
+
         loop {
-            if timeout(Duration::from_millis(100), TEST_FLOAT32.write(&mut ctx, i))
-                .await
-                .is_err()
-            {
-                println!("failed to get write response within 100 ms");
+            if TEST_FLOAT32.write(&mut ljc, i).await.is_err() {
+                println!(
+                    "failed to get write response within {:?}",
+                    ljc.command_response_timeout
+                );
                 break;
             }
-            let value = timeout(Duration::from_millis(100), TEST_FLOAT32.read(&mut ctx)).await;
+            let value = timeout(Duration::from_millis(100), TEST_FLOAT32.read(&mut ljc)).await;
             if value.is_err() {
                 println!("did not receive value within 100 ms");
                 break;
@@ -59,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             sleep(Duration::from_millis(10)).await;
         }
         println!("Disconnecting");
-        ctx.disconnect().await;
+        ljc.disconnect().await;
     }
 
     // DAC0.write(&mut ctx, 3.333).await.unwrap();

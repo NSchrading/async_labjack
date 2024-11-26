@@ -1,6 +1,7 @@
 //! structs and traits for Labjack Tags.
 
 use crate::client::CustomReader;
+use crate::client::LabjackClient;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use anyhow::Result;
@@ -10,6 +11,7 @@ use enum_dispatch::enum_dispatch;
 use std::cmp;
 use std::marker::PhantomData;
 use std::str;
+use tokio::time::timeout;
 use tokio_modbus::client::{Context, Writer};
 use tokio_modbus::prelude::Reader;
 
@@ -71,18 +73,25 @@ impl<W> LabjackTag<u64, CanRead, W> {
 
 impl<R> LabjackTag<f32, R, CanWrite> {
     /// Write an f32 to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, context: &mut Context, val: f32) -> Result<()> {
-        Ok(context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await??)
+    pub async fn write(self, client: &mut LabjackClient, val: f32) -> anyhow::Result<()> {
+        Ok(timeout(
+            client.command_response_timeout,
+            client
+                .context
+                .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
+        )
+        .await???)
     }
 }
 
 impl<W> LabjackTag<f32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<f32>.
-    pub async fn read(self, context: &mut Context) -> Result<f32> {
+    pub async fn read(self, client: &mut LabjackClient) -> Result<f32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
+        let data: Vec<u16> = client
+            .context
+            .read_input_registers(self.address, 2)
+            .await??;
         // Combine the two u16s into a single u32 in big endian
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to f32

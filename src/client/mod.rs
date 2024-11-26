@@ -23,12 +23,54 @@ use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
 use std::cmp;
+use std::io;
 use std::iter::zip;
-use tokio::net::UdpSocket;
+use std::net::SocketAddr;
+use tokio::net::TcpSocket;
+use tokio::time::timeout;
+use tokio::time::Duration;
 use tokio_modbus::client::{Client, Context};
+use tokio_modbus::prelude::tcp;
 use tokio_modbus::prelude::Writer;
 use tokio_modbus::prelude::{Request, Response};
 use tokio_modbus::Result;
+
+#[derive(Debug)]
+pub struct LabjackClient {
+    pub context: Context,
+    address: SocketAddr,
+    pub command_response_timeout: Duration,
+}
+
+impl LabjackClient {
+    pub async fn connect(socket_addr: SocketAddr) -> anyhow::Result<Self> {
+        let address = socket_addr;
+
+        // since we're constructing the socket and then connecting, we could add
+        // socket configuration
+        let socket = TcpSocket::new_v4()?;
+        let transport = socket.connect(address).await?;
+        let context = tcp::attach(transport);
+
+        let labjack_client = LabjackClient {
+            context,
+            address,
+            command_response_timeout: Duration::from_secs(5),
+        };
+        Ok(labjack_client)
+    }
+
+    pub async fn connect_with_timeout(
+        socket_addr: SocketAddr,
+        timeout_duration: Duration,
+    ) -> anyhow::Result<Self> {
+        timeout(timeout_duration, Self::connect(socket_addr)).await?
+    }
+
+    pub async fn disconnect(&mut self) -> io::Result<()> {
+        self.context.disconnect().await
+    }
+}
 
 /// An extra trait for the tokio_modbus Client, allowing for reads (or reads and writes) of higher
 /// level ModbusFeedbackFrames or ReadableLabjackTags / WritableLabjackTags.
