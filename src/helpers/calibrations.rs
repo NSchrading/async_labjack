@@ -75,8 +75,15 @@ pub struct T7Calibrations {
 /// Convert a binary analog input value (e.g. from streaming or reading AIN<N>_BINARY) to a floating
 /// point voltage value using the provided AinCalibration.
 /// Currently only supports T7
-pub fn ain_binary_to_volts(ain_binary: u16, ain_calibration: &AinCalibration) -> f32 {
-    let ain_bin_float = ain_binary as f32;
+pub fn ain_binary_to_volts(ain_binary: u32, ain_calibration: &AinCalibration) -> f32 {
+    let ain_bin_float: f32 = if ain_binary > (u16::MAX as u32) {
+        // we're getting 24-bit precision values, labjack normalizes the conversions to 16-bits.
+        // To compensate, we divide by 256.0 to approximate the 16-bit value.
+        (ain_binary as f32) / 256.0
+    } else {
+        // we're getting 16-bit precision values
+        ain_binary as f32
+    };
     if ain_bin_float < ain_calibration.binary_center {
         return (ain_calibration.binary_center - ain_bin_float) * ain_calibration.negative_slope;
     }

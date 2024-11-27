@@ -12,13 +12,14 @@
 
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
+use tokio::time::Duration;
 use tokio_labjack_lib::client::CustomReader;
+use tokio_labjack_lib::client::LabjackClient;
 use tokio_labjack_lib::helpers::calibrations::ain_binary_to_volts;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
 use tokio_labjack_lib::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
-use tokio_modbus::prelude::*;
 
 #[tokio::main()]
 async fn main() {
@@ -26,21 +27,24 @@ async fn main() {
 
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut ctx = tcp::connect(socket_addr).await.unwrap();
+    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+        .await
+        .unwrap();
 
     // Make sure AIN1 range is +/- 10V. We use this calibration mode when converting binary to volts
-    AIN1_RANGE.write(&mut ctx, 0.0).await.unwrap();
+    AIN1_RANGE.write(&mut client, 0.0).await.unwrap();
     // Make sure AIN1 negative channel is ground (single ended)
-    AIN1_NEGATIVE_CH.write(&mut ctx, 199).await.unwrap();
+    AIN1_NEGATIVE_CH.write(&mut client, 199).await.unwrap();
     // Make sure resolution index is default
-    AIN1_RESOLUTION_INDEX.write(&mut ctx, 0).await.unwrap();
+    AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
 
     // We need the calibration constants in order to convert the binary values to volts.
-    let t7_cal = ctx.read_calibrations().await.unwrap().unwrap();
+    let t7_cal = client.context.read_calibrations().await.unwrap().unwrap();
     println!("Calibration constants: {t7_cal:?}");
 
     // First let's read both the 24-bit binary value and the converted value from the labjack
-    let readings = ctx
+    let readings = client
+        .context
         .read_tags(&[AIN1_BINARY.into(), AIN1.into()])
         .await
         .unwrap()
@@ -52,17 +56,12 @@ async fn main() {
             panic!("unexpected tag value: {:?}", readings[0])
         }
     };
-    // The conversion calculations expect u16 values (16-bit precision).
-    // When streaming, you always get 16-bit values but labjack returns 24-bit precision for
-    // AIN<N>_BINARY.
-    let raw_16_bit_ain_binary = (raw_24_bit_ain1_binary >> 8) as u16;
-
     // If using a T7-pro, the default resolution index is 9 for command-response reads.
     // This makes use of the high-resolution 24-bit ADC, so we should use the high resolution (hr)
     // calibration constants.
     // If using a T7, change this to t7_cal.hs_gain_1_ain_cal.
     // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
-    let volt_value = ain_binary_to_volts(raw_16_bit_ain_binary, &t7_cal.hr_gain_1_ain_cal);
+    let volt_value = ain_binary_to_volts(raw_24_bit_ain1_binary, &t7_cal.hr_gain_1_ain_cal);
 
     let ain_volt_converted_on_device = match readings[1] {
         HydratedTagValue::F32(val) => val,
@@ -71,9 +70,7 @@ async fn main() {
         }
     };
 
-    println!(
-        "Raw 24-bit value: {raw_24_bit_ain1_binary:?}, Raw 16-bit value: {raw_16_bit_ain_binary:?}"
-    );
+    println!("Raw 24-bit value: {raw_24_bit_ain1_binary:?}");
     println!("Our conversion: {volt_value:?}V, on device: {ain_volt_converted_on_device:?}V");
 
     // Now let's stream some 16-bit AIN values:
@@ -96,7 +93,9 @@ async fn main() {
         .unwrap();
 
     let stream = TcpStream::connect("192.168.42.100:702").await.unwrap();
-    ctx.start_stream(new_stream_config, vec![AIN1.into()])
+    client
+        .context
+        .start_stream(new_stream_config, vec![AIN1.into()])
         .await
         .unwrap();
 
@@ -118,7 +117,7 @@ async fn main() {
         // Note that we use hs instead of hr calibrations here. Streaming always uses the lower
         // precision 16-bit ADCs and always returns u16s.
         // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
-        let volt_value = ain_binary_to_volts(value, &t7_cal.hs_gain_1_ain_cal);
+        let volt_value = ain_binary_to_volts(value as u32, &t7_cal.hs_gain_1_ain_cal);
         println!("{volt_value:?}V");
         total_count += 1;
     }
@@ -126,10 +125,10 @@ async fn main() {
     assert!(total_count == TOTAL_SAMPLES_EXPECTED);
     println!("All values from the stream were consumed and as expected.");
 
-    if let Err(e) = ctx.stop_stream().await {
+    if let Err(e) = client.context.stop_stream().await {
         println!("Stopping stream error: {e}");
     }
 
     println!("Disconnecting");
-    ctx.disconnect().await.unwrap();
+    client.disconnect().await.unwrap();
 }

@@ -150,8 +150,11 @@ impl<W> LabjackTag<u16, CanRead, W> {
 
 impl<R> LabjackTag<u16, R, CanWrite> {
     /// Write a u16 to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, context: &mut Context, val: u16) -> Result<()> {
-        Ok(context.write_single_register(self.address, val).await??)
+    pub async fn write(self, client: &mut LabjackClient, val: u16) -> Result<()> {
+        Ok(client
+            .context
+            .write_single_register(self.address, val)
+            .await??)
     }
 }
 
