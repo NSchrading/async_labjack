@@ -30,15 +30,15 @@ pub fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
 /// assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0xA1B2]);
 /// ```
 pub fn u8_to_u16_vec(input: &[u8]) -> Result<Vec<u16>> {
-    if input.len() % 2 != 0 {
-        bail!(
-            "Input vector must have an even length, but length was {}",
-            input.len()
-        );
-    }
     Ok(input
-        .chunks_exact(2)
-        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .chunks(2)
+        .map(|chunk| {
+            if chunk.len() == 2 {
+                u16::from_be_bytes([chunk[0], chunk[1]])
+            } else {
+                u16::from_be_bytes([chunk[0], 0])
+            }
+        })
         .collect())
 }
 
@@ -66,14 +66,8 @@ mod tests {
         let bytes = [0, 0, 0, 0, 0, 0];
         assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0, 0, 0]);
 
-        let bytes = [1, 2, 3];
-        assert_eq!(
-            u8_to_u16_vec(&bytes).unwrap_err().to_string(),
-            format!(
-                "Input vector must have an even length, but length was {}",
-                bytes.len()
-            )
-        );
+        let bytes = [0x12, 0x34, 0x56];
+        assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0x1234, 0x5600]);
 
         let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
         assert_eq!(

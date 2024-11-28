@@ -59,7 +59,7 @@ impl<'a> ModbusFeedbackFrame<'a> {
     /// ```
     /// use tokio_labjack_lib::{AIN0, AIN1};
     /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
-    /// // A feedback frame that will read AIN0 and AIN1 and write 5.4321 to TEST_FLOAT32.
+    /// // A feedback frame that will read AIN0 and AIN1.
     /// let mut mbfb = ModbusFeedbackFrame::new_read_frame(
     ///     &[AIN0.address, AIN1.address],
     ///     &[2, 2],

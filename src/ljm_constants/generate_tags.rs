@@ -64,6 +64,57 @@ impl fmt::Display for LabjackTag {
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+struct LabjackError {
+    number: u16,
+    name: String,
+    description: String,
+}
+
+impl LabjackError {
+    fn new(number: u16, name: String, description: String) -> Self {
+        LabjackError {
+            number,
+            name,
+            description,
+        }
+    }
+}
+
+impl fmt::Display for LabjackError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.description.len() > 0 {
+            write!(
+                f,
+                "\t\t/// {}\n\t\t{} = {},",
+                self.description, self.name, self.number
+            )
+        } else {
+            write!(f, "\t\t{} = {},", self.name, self.number)
+        }
+    }
+}
+
+fn screaming_snake_to_upper_camel_case(input: &str) -> String {
+    let mut output = String::new();
+    let mut capitalize_next = true;
+
+    for c in input.chars() {
+        if c == '_' {
+            capitalize_next = true;
+        } else {
+            if capitalize_next {
+                output.push_str(&c.to_uppercase().to_string());
+            } else {
+                output.push_str(&c.to_lowercase().to_string());
+            }
+            capitalize_next = false;
+        }
+    }
+
+    output
+}
+
 fn main() {
     let address_re = Regex::new(r"#\(0:(\d+)\)").unwrap();
     let file = File::open("src/ljm_constants/ljm_constants.json").unwrap();
@@ -74,8 +125,14 @@ fn main() {
         .expect("ljm_constants should have a 'registers' key")
         .as_array()
         .expect("The 'registers' key should be an array.");
+    let errors = json
+        .get("errors")
+        .expect("ljm_constants should have an 'errors' key")
+        .as_array()
+        .expect("The 'errors' key should be an array.");
 
     let mut lib_file = File::create("src/lib.rs").unwrap();
+    writeln!(lib_file, "use crate::helpers::macros::back_to_enum;").unwrap();
     writeln!(
         lib_file,
         "use crate::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};"
@@ -187,4 +244,55 @@ fn main() {
     for labjack_tag in &labjack_tags {
         writeln!(lib_file, "{}", labjack_tag).unwrap();
     }
+
+    let mut labjack_errors: Vec<LabjackError> = Vec::new();
+    for error in errors {
+        let error_name = screaming_snake_to_upper_camel_case(
+            &error
+                .get("string")
+                .expect("Each register must have a name")
+                .as_str()
+                .expect("Error name must be a string")
+                .to_string(),
+        );
+
+        // The LJME errors are errors that come from LJM, not from the
+        // LabjackDevice itself.
+        if error_name.starts_with("Ljme") {
+            continue;
+        }
+
+        let error_num: u16 = error
+            .get("error")
+            .expect("Each register must have an error number.")
+            .as_number()
+            .expect("The error number must be a number")
+            .as_u64()
+            .expect("The error number must be parseable to a u64")
+            as u16;
+
+        let description = if let Some(desc) = error.get("description") {
+            desc.as_str()
+                .expect("Register description must be a string")
+                .to_string()
+        } else {
+            "".into()
+        };
+
+        let labjack_error = LabjackError::new(error_num, error_name, description);
+        labjack_errors.push(labjack_error);
+    }
+
+    labjack_errors.sort();
+    writeln!(lib_file).unwrap();
+    writeln!(lib_file, "back_to_enum! {{").unwrap();
+    writeln!(lib_file, "\t/// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag").unwrap();
+    writeln!(lib_file, "\t#[derive(Debug)]").unwrap();
+    writeln!(lib_file, "\t#[repr(u16)]").unwrap();
+    writeln!(lib_file, "\tpub enum LabjackError {{").unwrap();
+    for labjack_error in &labjack_errors {
+        writeln!(lib_file, "{}", labjack_error).unwrap();
+    }
+    writeln!(lib_file, "\t}}").unwrap();
+    writeln!(lib_file, "}}").unwrap();
 }

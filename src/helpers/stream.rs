@@ -1,36 +1,20 @@
+use crate::helpers::macros::back_to_enum;
 use anyhow::bail;
 use anyhow::Result;
-use std::cmp::min;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{sleep, Duration};
 
-#[repr(u16)]
-pub enum StreamStatus {
-    Nominal = 0,
-    AutoRecoverActive = 2940,
-    AutoRecoverEnd = 2941, //Additional Info. = # scans skipped
-    ScanOverlap = 2942,
-    AutoRecoverEndOverflow = 2943,
-    BurstComplete = 2944,
-}
-
-impl TryFrom<u16> for StreamStatus {
-    type Error = ();
-
-    fn try_from(v: u16) -> Result<Self, Self::Error> {
-        match v {
-            x if x == StreamStatus::Nominal as u16 => Ok(StreamStatus::Nominal),
-            x if x == StreamStatus::AutoRecoverActive as u16 => Ok(StreamStatus::AutoRecoverActive),
-            x if x == StreamStatus::AutoRecoverEnd as u16 => Ok(StreamStatus::AutoRecoverEnd),
-            x if x == StreamStatus::ScanOverlap as u16 => Ok(StreamStatus::ScanOverlap),
-            x if x == StreamStatus::AutoRecoverEndOverflow as u16 => {
-                Ok(StreamStatus::AutoRecoverEndOverflow)
-            }
-            x if x == StreamStatus::BurstComplete as u16 => Ok(StreamStatus::BurstComplete),
-            _ => Err(()),
-        }
+back_to_enum! {
+    #[derive(Debug)]
+    #[repr(u16)]
+    pub enum StreamStatus {
+        Nominal = 0,
+        AutoRecoverActive = 2940,
+        AutoRecoverEnd = 2941, //Additional Info. = # scans skipped
+        ScanOverlap = 2942,
+        AutoRecoverEndOverflow = 2943,
+        BurstComplete = 2944,
     }
 }
 
