@@ -1,8 +1,8 @@
 use tokio::time::{sleep, Duration};
-use tokio_labjack_lib::client::CustomReader;
+use tokio_labjack_lib::client::LabjackClient;
+use tokio_labjack_lib::client::LabjackInteractions;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
 use tokio_labjack_lib::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
-use tokio_modbus::prelude::*;
 
 #[tokio::main()]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut ctx = tcp::connect(socket_addr).await?;
+    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+        .await
+        .unwrap();
 
     const NUM_SCANS: u32 = 5;
     const NUM_TAGS: u32 = 2;
@@ -31,17 +33,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // https://support.labjack.com/docs/3-2-stream-mode-t-series-datasheet#id-3.2StreamMode[T-SeriesDatasheet]-16-bitor32-bitData
     // We're reading the 20Hz system timer, at a rate of 1Hz, so each read value should increase
     // by ~20.
-    ctx.start_stream(
-        new_stream_config,
-        vec![SYSTEM_TIMER_20HZ.into(), STREAM_DATA_CAPTURE_16.into()],
-    )
-    .await
-    .unwrap();
+    client
+        .start_stream(
+            new_stream_config,
+            vec![SYSTEM_TIMER_20HZ.into(), STREAM_DATA_CAPTURE_16.into()],
+        )
+        .await
+        .unwrap();
 
     sleep(Duration::from_secs(5)).await;
 
     // read the data from STREAM_DATA_CR
-    let data = ctx
+    let data = client
         .read_stream_cr(TOTAL_SAMPLES_EXPECTED as u16)
         .await
         .unwrap();
@@ -74,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // you should stop the stream before disconnecting.
 
     println!("Disconnecting");
-    ctx.disconnect().await?;
+    client.disconnect().await?;
 
     Ok(())
 }

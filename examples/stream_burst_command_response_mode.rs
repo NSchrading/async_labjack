@@ -1,8 +1,8 @@
 use tokio::time::{sleep, Duration};
-use tokio_labjack_lib::client::CustomReader;
+use tokio_labjack_lib::client::LabjackClient;
+use tokio_labjack_lib::client::LabjackInteractions;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
 use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
-use tokio_modbus::prelude::*;
 
 #[tokio::main()]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut ctx = tcp::connect(socket_addr).await?;
+    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+        .await
+        .unwrap();
 
     // command response mode (auto_target = 16) sends data to the STREAM_DATA_CR tag
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
@@ -27,17 +29,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()
         .unwrap();
 
-    ctx.start_stream(
-        new_stream_config,
-        vec![
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-        ],
-    )
-    .await
-    .unwrap();
+    client
+        .start_stream(
+            new_stream_config,
+            vec![
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+            ],
+        )
+        .await
+        .unwrap();
 
     // sleep some time to wait for data to populate in STREAM_DATA_CR
     // we're sampling at 1kHz so this should be able to do ~1000 scans and NUM_SCANS is less
@@ -45,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     sleep(Duration::from_secs(1)).await;
 
     // read the data from STREAM_DATA_CR
-    let data = ctx
+    let data = client
         .read_stream_cr(TOTAL_SAMPLES_EXPECTED as u16)
         .await
         .unwrap();
@@ -65,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // you should stop the stream before disconnecting.
 
     println!("Disconnecting");
-    ctx.disconnect().await?;
+    client.disconnect().await?;
 
     Ok(())
 }

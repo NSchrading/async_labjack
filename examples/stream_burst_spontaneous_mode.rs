@@ -1,10 +1,11 @@
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio_labjack_lib::client::CustomReader;
+use tokio::time::Duration;
+use tokio_labjack_lib::client::LabjackClient;
+use tokio_labjack_lib::client::LabjackInteractions;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
 use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
-use tokio_modbus::prelude::*;
 
 #[tokio::main()]
 async fn main() {
@@ -12,7 +13,9 @@ async fn main() {
 
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut ctx = tcp::connect(socket_addr).await.unwrap();
+    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+        .await
+        .unwrap();
 
     // Spontaneous mode (auto_target = 1) sends data to port 702
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
@@ -31,15 +34,16 @@ async fn main() {
         .unwrap();
 
     let stream = TcpStream::connect("192.168.42.100:702").await.unwrap();
-    ctx.start_stream(
-        new_stream_config,
-        vec![
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-        ],
-    )
-    .await
-    .unwrap();
+    client
+        .start_stream(
+            new_stream_config,
+            vec![
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+                STREAM_DEBUG_GET_SELF_INDEX.into(),
+            ],
+        )
+        .await
+        .unwrap();
 
     // As the data streams in, we need to parse it from the Modbus Feedback Spontaneous
     // Packet Protocol to the data bytes. We do this in a background async task.
@@ -73,5 +77,5 @@ async fn main() {
     // you should stop the stream before disconnecting.
 
     println!("Disconnecting");
-    ctx.disconnect().await.unwrap();
+    client.disconnect().await.unwrap();
 }

@@ -75,7 +75,7 @@ impl LabjackClient {
 /// An extra trait for the tokio_modbus Client, allowing for reads (or reads and writes) of higher
 /// level ModbusFeedbackFrames or ReadableLabjackTags / WritableLabjackTags.
 #[async_trait]
-pub trait CustomReader: Client {
+pub trait LabjackInteractions {
     /// Read and/or write asynchronously from the labjack via the Modbus Feedback function.
     /// Takes a Bytes representation of a well-formed MBFB packet and returns a future of the
     /// resulting Bytes.
@@ -139,6 +139,23 @@ pub trait CustomReader: Client {
     /// (LSW + 65536*MSW). Note that STREAM_DATA_CAPTURE_16 may be placed in multiple locations in
     /// the scan list.
     async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>>;
+
+    /// Write asynchronously from the labjack via the Modbus Feedback function.
+    /// Takes a ModbusFeedbackFrame and returns a future of the result.
+    async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
+
+    /// Write asynchronously from the labjack via the Modbus Feedback function.
+    /// Takes a Bytes of a well-formed MBFB packet and returns a future of the result.
+    async fn write_bytes(&mut self, bytes: Bytes) -> Result<()>;
+
+    /// Write asynchronously from the labjack via the Modbus Feedback function.
+    /// Takes WritableLabjackTags and the HydratedTagValues to write and returns a future of
+    /// the result.
+    async fn write_tags<const N: usize>(
+        &mut self,
+        tags: &[WritableLabjackTag; N],
+        tag_values: &[HydratedTagValue; N],
+    ) -> Result<()>;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -199,9 +216,10 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 }
 
 #[async_trait]
-impl CustomReader for Context {
+impl LabjackInteractions for LabjackClient {
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
-        self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
+        self.context
+            .call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {
                 result.map_err(Into::into).map(|response| match response {
@@ -403,11 +421,12 @@ impl CustomReader for Context {
         let data_bytes = Bytes::from(bytes_vec);
 
         // write the addresses that should be streamed to STREAM_SCANLIST_ADDRESS<N>
-        self.write_multiple_registers(
-            STREAM_SCANLIST_ADDRESS0.address,
-            &u8_to_u16_vec(&data_bytes).unwrap(),
-        )
-        .await??;
+        self.context
+            .write_multiple_registers(
+                STREAM_SCANLIST_ADDRESS0.address,
+                &u8_to_u16_vec(&data_bytes).unwrap(),
+            )
+            .await??;
 
         // start the stream - check that it was set to 1.
         let stream_enable_result = self
@@ -577,32 +596,7 @@ impl CustomReader for Context {
 
         Ok(data)
     }
-}
 
-/// An extra trait for the tokio_modbus Client, allowing for writes of higher
-/// level ModbusFeedbackFrames or WritableLabjackTags.
-#[async_trait]
-pub trait CustomWriter: Client {
-    /// Write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a ModbusFeedbackFrame and returns a future of the result.
-    async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
-
-    /// Write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a Bytes of a well-formed MBFB packet and returns a future of the result.
-    async fn write_bytes(&mut self, bytes: Bytes) -> Result<()>;
-
-    /// Write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes WritableLabjackTags and the HydratedTagValues to write and returns a future of
-    /// the result.
-    async fn write_tags<const N: usize>(
-        &mut self,
-        tags: &[WritableLabjackTag; N],
-        tag_values: &[HydratedTagValue; N],
-    ) -> Result<()>;
-}
-
-#[async_trait]
-impl CustomWriter for Context {
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
         assert!(mbfb.read_addresses.is_empty());
         assert!(mbfb.read_counts.is_empty());
@@ -614,7 +608,8 @@ impl CustomWriter for Context {
     }
 
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()> {
-        self.call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
+        self.context
+            .call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {
                 result.map_err(Into::into).map(|response| match response {

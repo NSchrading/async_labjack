@@ -13,8 +13,8 @@
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
-use tokio_labjack_lib::client::CustomReader;
 use tokio_labjack_lib::client::LabjackClient;
+use tokio_labjack_lib::client::LabjackInteractions;
 use tokio_labjack_lib::helpers::calibrations::ain_binary_to_volts;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::HydratedTagValue;
@@ -39,12 +39,11 @@ async fn main() {
     AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
 
     // We need the calibration constants in order to convert the binary values to volts.
-    let t7_cal = client.context.read_calibrations().await.unwrap().unwrap();
+    let t7_cal = client.read_calibrations().await.unwrap().unwrap();
     println!("Calibration constants: {t7_cal:?}");
 
     // First let's read both the 24-bit binary value and the converted value from the labjack
     let readings = client
-        .context
         .read_tags(&[AIN1_BINARY.into(), AIN1.into()])
         .await
         .unwrap()
@@ -94,7 +93,6 @@ async fn main() {
 
     let stream = TcpStream::connect("192.168.42.100:702").await.unwrap();
     client
-        .context
         .start_stream(new_stream_config, vec![AIN1.into()])
         .await
         .unwrap();
@@ -125,7 +123,7 @@ async fn main() {
     assert!(total_count == TOTAL_SAMPLES_EXPECTED);
     println!("All values from the stream were consumed and as expected.");
 
-    if let Err(e) = client.context.stop_stream().await {
+    if let Err(e) = client.stop_stream().await {
         println!("Stopping stream error: {e}");
     }
 

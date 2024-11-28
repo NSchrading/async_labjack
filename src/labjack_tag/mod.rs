@@ -1,7 +1,7 @@
 //! structs and traits for Labjack Tags.
 
-use crate::client::CustomReader;
 use crate::client::LabjackClient;
+use crate::client::LabjackInteractions;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use anyhow::Result;
@@ -12,7 +12,7 @@ use std::cmp;
 use std::marker::PhantomData;
 use std::str;
 use tokio::time::timeout;
-use tokio_modbus::client::{Context, Writer};
+use tokio_modbus::client::Writer;
 use tokio_modbus::prelude::Reader;
 
 /// Tags with this type can be read and will have `read` implementations.
@@ -60,9 +60,13 @@ impl<T, R, W> LabjackTag<T, R, W> {
 
 impl<W> LabjackTag<u64, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u64>.
-    pub async fn read(self, context: &mut Context) -> Result<u64> {
+    pub async fn read(self, client: &mut LabjackClient) -> Result<u64> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context.read_input_registers(self.address, 4).await??;
+        let data = timeout(
+            client.command_response_timeout,
+            client.context.read_input_registers(self.address, 4),
+        )
+        .await???;
         // Combine the four u16s into a single u64 in big endian
         Ok((u64::from(data[0]) << 48)
             | (u64::from(data[1]) << 32)
@@ -73,7 +77,7 @@ impl<W> LabjackTag<u64, CanRead, W> {
 
 impl<R> LabjackTag<f32, R, CanWrite> {
     /// Write an f32 to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, client: &mut LabjackClient, val: f32) -> anyhow::Result<()> {
+    pub async fn write(self, client: &mut LabjackClient, val: f32) -> Result<()> {
         Ok(timeout(
             client.command_response_timeout,
             client
@@ -88,10 +92,11 @@ impl<W> LabjackTag<f32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<f32>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<f32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = client
-            .context
-            .read_input_registers(self.address, 2)
-            .await??;
+        let data = timeout(
+            client.command_response_timeout,
+            client.context.read_input_registers(self.address, 2),
+        )
+        .await???;
         // Combine the two u16s into a single u32 in big endian
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to f32
@@ -101,18 +106,26 @@ impl<W> LabjackTag<f32, CanRead, W> {
 
 impl<R> LabjackTag<i32, R, CanWrite> {
     /// Write an i32 to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, context: &mut Context, val: i32) -> Result<()> {
-        Ok(context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await??)
+    pub async fn write(self, client: &mut LabjackClient, val: i32) -> Result<()> {
+        Ok(timeout(
+            client.command_response_timeout,
+            client
+                .context
+                .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
+        )
+        .await???)
     }
 }
 
 impl<W> LabjackTag<i32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<i32>.
-    pub async fn read(self, context: &mut Context) -> Result<i32> {
+    pub async fn read(self, client: &mut LabjackClient) -> Result<i32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
+        let data = timeout(
+            client.command_response_timeout,
+            client.context.read_input_registers(self.address, 2),
+        )
+        .await???;
         // Combine the two u16s into a single u32 in big endian
         let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
         // Convert the u32 to i32
@@ -122,18 +135,26 @@ impl<W> LabjackTag<i32, CanRead, W> {
 
 impl<R> LabjackTag<u32, R, CanWrite> {
     /// Write a u32 to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, context: &mut Context, val: u32) -> Result<()> {
-        Ok(context
-            .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes()))
-            .await??)
+    pub async fn write(self, client: &mut LabjackClient, val: u32) -> Result<()> {
+        Ok(timeout(
+            client.command_response_timeout,
+            client
+                .context
+                .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
+        )
+        .await???)
     }
 }
 
 impl<W> LabjackTag<u32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u32>.
-    pub async fn read(self, context: &mut Context) -> Result<u32> {
+    pub async fn read(self, client: &mut LabjackClient) -> Result<u32> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context.read_input_registers(self.address, 2).await??;
+        let data = timeout(
+            client.command_response_timeout,
+            client.context.read_input_registers(self.address, 2),
+        )
+        .await???;
         // Combine the two u16s into a single u32 in big endian
         Ok((u32::from(data[0]) << 16) | u32::from(data[1]))
     }
@@ -141,9 +162,13 @@ impl<W> LabjackTag<u32, CanRead, W> {
 
 impl<W> LabjackTag<u16, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u16>.
-    pub async fn read(self, context: &mut Context) -> Result<u16> {
+    pub async fn read(self, client: &mut LabjackClient) -> Result<u16> {
         // fetch the data, it is returned in big endian
-        let data: Vec<u16> = context.read_input_registers(self.address, 1).await??;
+        let data = timeout(
+            client.command_response_timeout,
+            client.context.read_input_registers(self.address, 1),
+        )
+        .await???;
         Ok(data[0])
     }
 }
@@ -151,10 +176,11 @@ impl<W> LabjackTag<u16, CanRead, W> {
 impl<R> LabjackTag<u16, R, CanWrite> {
     /// Write a u16 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: u16) -> Result<()> {
-        Ok(client
-            .context
-            .write_single_register(self.address, val)
-            .await??)
+        Ok(timeout(
+            client.command_response_timeout,
+            client.context.write_single_register(self.address, val),
+        )
+        .await???)
     }
 }
 
@@ -163,7 +189,7 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
     /// Result<Bytes>. This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
-    pub async fn read(self, context: &mut Context, num_bytes: u32) -> Result<Bytes> {
+    pub async fn read(self, client: &mut LabjackClient, num_bytes: u32) -> Result<Bytes> {
         // Max ethernet packet size is 1040 bytes, keeping this at 1020 bytes accounts for overhead
         // from the MBFB response packet
         const MAX_BYTES_PER_CALL: u16 = 1020;
@@ -205,7 +231,8 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
 
             let mut mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
 
-            let result = context.read_mbfb(&mut mbfb).await??;
+            let result =
+                timeout(client.command_response_timeout, client.read_mbfb(&mut mbfb)).await???;
             log::debug!("total num bytes read from read_mbfb: {}", result.len());
             total_bytes_to_read = total_bytes_to_read.saturating_sub(result.len() as u32);
             log::debug!("Still need to read {total_bytes_to_read} bytes");
@@ -226,8 +253,8 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
     /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
-    pub async fn read_string(self, context: &mut Context, len: u32) -> Result<String> {
-        let mut bytes = self.read(context, len).await?;
+    pub async fn read_string(self, client: &mut LabjackClient, len: u32) -> Result<String> {
+        let mut bytes = self.read(client, len).await?;
         // The bytes returned will have a null byte (c-string)
         bytes.truncate(bytes.len() - 1);
         let str_slice = str::from_utf8(&bytes)?;
@@ -239,8 +266,8 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
     /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
-    pub async fn read_file(self, context: &mut Context, len: u32) -> Result<String> {
-        let bytes = self.read(context, len).await?;
+    pub async fn read_file(self, client: &mut LabjackClient, len: u32) -> Result<String> {
+        let bytes = self.read(client, len).await?;
         let str_slice = str::from_utf8(&bytes)?;
         Ok(str_slice.to_string())
     }
@@ -248,10 +275,14 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
 
 impl<R> LabjackTag<Bytes, R, CanWrite> {
     /// Write the specified Bytes to the tag asynchronously and return a future holding a Result.
-    pub async fn write(self, context: &mut Context, val: Bytes) -> Result<()> {
-        Ok(context
-            .write_multiple_registers(self.address, &u8_to_u16_vec(&val)?)
-            .await??)
+    pub async fn write(self, client: &mut LabjackClient, val: Bytes) -> Result<()> {
+        Ok(timeout(
+            client.command_response_timeout,
+            client
+                .context
+                .write_multiple_registers(self.address, &u8_to_u16_vec(&val)?),
+        )
+        .await???)
     }
 }
 
