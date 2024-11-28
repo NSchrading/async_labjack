@@ -76,6 +76,6 @@ async fn main() {
     // Stream burst ends the stream automatically, but if this was not a stream burst example
     // you should stop the stream before disconnecting.
 
-    println!("Disconnecting");
+    println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
 }

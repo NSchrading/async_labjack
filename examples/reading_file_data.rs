@@ -114,4 +114,7 @@ async fn main() {
 
     // Finally, close the file.
     FILE_IO_CLOSE.write(&mut client, 1).await.unwrap();
+
+    println!("Success! Disconnecting...");
+    client.disconnect().await.unwrap();
 }

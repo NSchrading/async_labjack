@@ -5,7 +5,7 @@ use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
 use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
 
 #[tokio::main()]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     env_logger::init();
 
     let socket_addr = "192.168.42.100:502".parse().unwrap();
@@ -67,8 +67,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Stream burst ends the stream automatically, but if this was not a stream burst example
     // you should stop the stream before disconnecting.
 
-    println!("Disconnecting");
-    client.disconnect().await?;
-
-    Ok(())
+    println!("Success! Disconnecting...");
+    client.disconnect().await.unwrap();
 }

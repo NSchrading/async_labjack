@@ -1,6 +1,6 @@
 //! Additional traits for the tokio modbus Client / Context for reading and writing LabjackTags or
 //! ModbusFeedbackFrames.
-use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
+use crate::helpers::bit_manipulation::u8_to_u16_vec;
 use crate::helpers::calibrations::{
     AinCalibrationBuilder, DacCalibrationBuilder, T7Calibrations, T7CalibrationsBuilder,
     TemperatureCalibrationBuilder,
@@ -11,11 +11,10 @@ use crate::labjack_tag::{
 use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::{
-    AIN0, AIN1, DGT_CHANGE_LOG_INTERVAL_INDEX, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
-    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR,
-    STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+    INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES,
+    STREAM_DATATYPE, STREAM_DATA_CR, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
     STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0,
-    STREAM_SCANLIST_ADDRESS1, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
 use anyhow;
 use anyhow::bail;

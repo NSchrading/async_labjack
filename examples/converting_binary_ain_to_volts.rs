@@ -127,6 +127,6 @@ async fn main() {
         println!("Stopping stream error: {e}");
     }
 
-    println!("Disconnecting");
+    println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
 }

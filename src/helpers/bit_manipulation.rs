@@ -1,6 +1,6 @@
 //! Helper functions for bit manipulation.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 /// Takes a big-endian 4-byte array and converts it to a big-endian array of 2 16-bit values.
 ///
@@ -20,7 +20,8 @@ pub fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
 
 /// Takes a big-endian array of even length and converts it to a big-endian array of 16-bit values.
 ///
-/// Returns an error if the input array is not even.
+/// If the input array is not even, then the final u8 will be placed in the MSB of the resulting u16
+/// value, with the LSB filled with 0s.
 ///
 /// # Examples
 ///

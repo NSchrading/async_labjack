@@ -128,6 +128,6 @@ async fn main() {
         panic!("Unexpected tag value")
     };
 
-    println!("Disconnecting");
+    println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
 }
