@@ -39,14 +39,13 @@ async fn main() {
     AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
 
     // We need the calibration constants in order to convert the binary values to volts.
-    let t7_cal = client.read_calibrations().await.unwrap().unwrap();
+    let t7_cal = client.read_calibrations().await.unwrap();
     println!("Calibration constants: {t7_cal:?}");
 
     // First let's read both the 24-bit binary value and the converted value from the labjack
     let readings = client
         .read_tags(&[AIN1_BINARY.into(), AIN1.into()])
         .await
-        .unwrap()
         .unwrap();
 
     let raw_24_bit_ain1_binary = match readings[0] {

@@ -232,7 +232,7 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
             let mut mbfb = ModbusFeedbackFrame::new_read_frame(&addresses, &register_counts);
 
             let result =
-                timeout(client.command_response_timeout, client.read_mbfb(&mut mbfb)).await???;
+                timeout(client.command_response_timeout, client.read_mbfb(&mut mbfb)).await??;
             log::debug!("total num bytes read from read_mbfb: {}", result.len());
             total_bytes_to_read = total_bytes_to_read.saturating_sub(result.len() as u32);
             log::debug!("Still need to read {total_bytes_to_read} bytes");

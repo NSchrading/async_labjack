@@ -31,7 +31,6 @@ async fn main() {
             ],
         )
         .await
-        .unwrap()
         .unwrap();
 
     // Read a bunch of tags at once
@@ -44,7 +43,6 @@ async fn main() {
             TEST_UINT16.into(),
         ])
         .await
-        .unwrap()
         .unwrap();
 
     if let HydratedTagValue::F32(val) = results[0] {
@@ -101,7 +99,6 @@ async fn main() {
             ],
         )
         .await
-        .unwrap()
         .unwrap();
 
     if let HydratedTagValue::F32(val) = results[0] {

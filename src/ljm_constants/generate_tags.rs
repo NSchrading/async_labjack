@@ -86,11 +86,15 @@ impl fmt::Display for LabjackError {
         if self.description.len() > 0 {
             write!(
                 f,
-                "\t\t/// {}\n\t\t{} = {},",
-                self.description, self.name, self.number
+                "\t\t/// {}\n\t\t#[error(\"{}\")]\n\t\t{} = {},",
+                self.description, self.description, self.name, self.number
             )
         } else {
-            write!(f, "\t\t{} = {},", self.name, self.number)
+            write!(
+                f,
+                "\t\t#[error(\"{}\")]\n\t\t{} = {},",
+                self.name, self.name, self.number
+            )
         }
     }
 }
@@ -132,19 +136,33 @@ fn main() {
         .expect("The 'errors' key should be an array.");
 
     let mut lib_file = File::create("src/lib.rs").unwrap();
-    writeln!(lib_file, "use crate::helpers::macros::back_to_enum;").unwrap();
-    writeln!(
-        lib_file,
-        "use crate::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};"
-    )
-    .unwrap();
-    writeln!(lib_file, "use bytes::Bytes;").unwrap();
-    writeln!(lib_file).unwrap();
-    writeln!(lib_file, "pub mod client;").unwrap();
-    writeln!(lib_file, "pub mod helpers;").unwrap();
-    writeln!(lib_file, "pub mod labjack_tag;").unwrap();
-    writeln!(lib_file, "pub mod modbus_feedback;").unwrap();
-    writeln!(lib_file).unwrap();
+
+    let header = r#"
+use crate::helpers::macros::back_to_enum;
+use crate::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};
+use bytes::Bytes;
+use thiserror::Error;
+
+pub mod client;
+pub mod helpers;
+pub mod labjack_tag;
+pub mod modbus_feedback;
+
+#[derive(Debug, Error)]
+pub enum TokioLabjackError {
+    #[error(transparent)]
+    LabjackError(#[from] LabjackError),
+    #[error(transparent)]
+    TokioModbusExceptionCode(#[from] tokio_modbus::ExceptionCode),
+    #[error(transparent)]
+    TokioModbusError(#[from] tokio_modbus::Error),
+}
+
+/// Specialized [`std::result::Result`] type
+pub type Result<T> = std::result::Result<T, TokioLabjackError>;
+    "#;
+    writeln!(lib_file, "{}", header).unwrap();
+
     // I define these as LabjackTag<T, R, W>s because these are simple 2 byte structs vs
     // the larger WritableLabjackTag / ReadableLabjackTag enums. This means users need to use
     // .into() to convert to the enum when necessary, but it saves on overall program
@@ -277,7 +295,8 @@ fn main() {
                 .to_string()
         } else {
             "".into()
-        };
+        }
+        .replace("\"", "");
 
         let labjack_error = LabjackError::new(error_num, error_name, description);
         labjack_errors.push(labjack_error);
@@ -287,7 +306,7 @@ fn main() {
     writeln!(lib_file).unwrap();
     writeln!(lib_file, "back_to_enum! {{").unwrap();
     writeln!(lib_file, "\t/// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag").unwrap();
-    writeln!(lib_file, "\t#[derive(Debug)]").unwrap();
+    writeln!(lib_file, "\t#[derive(Debug, Error)]").unwrap();
     writeln!(lib_file, "\t#[repr(u16)]").unwrap();
     writeln!(lib_file, "\tpub enum LabjackError {{").unwrap();
     for labjack_error in &labjack_errors {

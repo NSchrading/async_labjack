@@ -17,7 +17,7 @@ async fn main() {
     // We're going to read 6 registers starting from address 0 (AIN0).
     // This means we'll overrun AIN0 (2 registers) and get AIN1 and AIN2 as well.
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(&[AIN0.address], &[6]);
-    let mut bytes_response = client.read_mbfb(&mut mbfb).await.unwrap().unwrap();
+    let mut bytes_response = client.read_mbfb(&mut mbfb).await.unwrap();
 
     assert!(bytes_response.len() == 12);
 
@@ -33,7 +33,7 @@ async fn main() {
         &[2, 2],
         Bytes::from(bytes_vec),
     );
-    client.write_mbfb(&mut mbfb).await.unwrap().unwrap();
+    client.write_mbfb(&mut mbfb).await.unwrap();
 
     let value = TEST_FLOAT32.read(&mut client).await.unwrap();
     assert!(value == 5.4321);

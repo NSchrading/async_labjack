@@ -13,7 +13,7 @@ macro_rules! back_to_enum {
         impl std::convert::TryFrom<u16> for $name {
             type Error = crate::helpers::ConversionError;
 
-            fn try_from(v: u16) -> Result<Self, Self::Error> {
+            fn try_from(v: u16) -> std::result::Result<Self, Self::Error> {
                 match v {
                     $(x if x == $name::$vname as u16 => Ok($name::$vname),)*
                     _ => Err(crate::helpers::ConversionError::UnknownErrorCode(v)),
