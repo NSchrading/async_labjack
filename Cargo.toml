@@ -22,6 +22,7 @@ derive_builder = "*"
 enum_dispatch = "*"
 env_logger = "*"
 log = "*"
+thiserror = "*"
 tokio = { version = "1.4", features = ["rt-multi-thread", "macros", "time"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
 

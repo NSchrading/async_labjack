@@ -11,10 +11,10 @@ use crate::labjack_tag::{
 use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::{
-    INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES,
-    STREAM_DATATYPE, STREAM_DATA_CR, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
-    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0,
-    STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    LabjackError, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER, LAST_ERR_DETAIL,
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR, STREAM_ENABLE,
+    STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET,
+    STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
 use anyhow;
 use anyhow::bail;
@@ -155,6 +155,8 @@ pub trait LabjackInteractions {
         tags: &[WritableLabjackTag; N],
         tag_values: &[HydratedTagValue; N],
     ) -> Result<()>;
+
+    async fn get_last_error_details(&mut self) -> anyhow::Result<LabjackError>;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -628,5 +630,10 @@ impl LabjackInteractions for LabjackClient {
     ) -> Result<()> {
         self.write_bytes(write_tags_to_bytes(tags, tag_values))
             .await
+    }
+
+    async fn get_last_error_details(&mut self) -> anyhow::Result<LabjackError> {
+        let error_code = LAST_ERR_DETAIL.read(self).await?;
+        Ok(error_code.try_into()?)
     }
 }
