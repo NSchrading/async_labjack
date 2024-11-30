@@ -15,7 +15,6 @@ name = "tokio_labjack"
 path = "src/bin.rs"
 
 [dependencies]
-anyhow = "*"
 async-trait = "*"
 bytes = "*"
 derive_builder = "*"

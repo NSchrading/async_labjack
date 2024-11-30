@@ -122,10 +122,6 @@ async fn main() {
     assert!(total_count == TOTAL_SAMPLES_EXPECTED);
     println!("All values from the stream were consumed and as expected.");
 
-    if let Err(e) = client.stop_stream().await {
-        println!("Stopping stream error: {e}");
-    }
-
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
 }

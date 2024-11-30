@@ -17,8 +17,6 @@ use crate::{
     STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
 use crate::{Result, TokioLabjackError};
-use anyhow;
-use anyhow::bail;
 use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
@@ -33,17 +31,17 @@ use tokio_modbus;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::tcp;
 use tokio_modbus::prelude::Writer;
-use tokio_modbus::prelude::{Request, Response};
+use tokio_modbus::prelude::{ExceptionCode, Request, Response};
 
 #[derive(Debug)]
 pub struct LabjackClient {
     pub context: Context,
-    address: SocketAddr,
+    pub address: SocketAddr,
     pub command_response_timeout: Duration,
 }
 
 impl LabjackClient {
-    pub async fn connect(socket_addr: SocketAddr) -> anyhow::Result<Self> {
+    pub async fn connect(socket_addr: SocketAddr) -> io::Result<Self> {
         let address = socket_addr;
 
         // since we're constructing the socket and then connecting, we could add
@@ -63,14 +61,40 @@ impl LabjackClient {
     pub async fn connect_with_timeout(
         socket_addr: SocketAddr,
         timeout_duration: Duration,
-    ) -> anyhow::Result<Self> {
+    ) -> io::Result<Self> {
         timeout(timeout_duration, Self::connect(socket_addr)).await?
     }
 
     pub async fn disconnect(&mut self) -> io::Result<()> {
+        if let Err(e) = self.stop_stream().await {
+            match e {
+                TokioLabjackError::TokioModbusError(tokio_modbus::Error::Transport(e))
+                    if e.kind() == io::ErrorKind::NotConnected =>
+                {
+                    // We're already disconnected - no need to call it again.
+                    return Ok(());
+                }
+                _ => {
+                    println!("e = {e:?}");
+                    // Nothing to do but note the error and attempt disconnect. User will
+                    // have to try stopping stream via powercycle or command.
+                    log::error!("Unable to stop stream before disconnect: {e}");
+                }
+            }
+        }
         self.context.disconnect().await
     }
 }
+
+// todo - unsure if I want this. It's probably fine to block the thread to perform the disconnect
+// but I need to bring in the futures crate just for this.
+// impl Drop for LabjackClient {
+//     fn drop(&mut self) {
+//         if let Err(e) = futures::executor::block_on(self.disconnect()) {
+//             log::error!("Unable to disconnect properly during client drop: {e}");
+//         }
+//     }
+// }
 
 /// An extra trait for the tokio_modbus Client, allowing for reads (or reads and writes) of higher
 /// level ModbusFeedbackFrames or ReadableLabjackTags / WritableLabjackTags.
@@ -118,8 +142,8 @@ pub trait LabjackInteractions {
         &mut self,
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
-    ) -> anyhow::Result<()>;
-    async fn stop_stream(&mut self) -> anyhow::Result<()>;
+    ) -> Result<()>;
+    async fn stop_stream(&mut self) -> Result<()>;
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations>;
 
@@ -138,7 +162,7 @@ pub trait LabjackInteractions {
     /// applicable 32-bit register, then combine the two values in software
     /// (LSW + 65536*MSW). Note that STREAM_DATA_CAPTURE_16 may be placed in multiple locations in
     /// the scan list.
-    async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>>;
+    async fn read_stream_cr(&mut self, num_samples: u16) -> Result<Vec<u16>>;
 
     /// Write asynchronously from the labjack via the Modbus Feedback function.
     /// Takes a ModbusFeedbackFrame and returns a future of the result.
@@ -157,7 +181,12 @@ pub trait LabjackInteractions {
         tag_values: &[HydratedTagValue; N],
     ) -> Result<()>;
 
-    async fn get_last_error_details(&mut self) -> anyhow::Result<LabjackError>;
+    async fn get_last_error_details(&mut self) -> Result<LabjackError>;
+
+    async fn detailed_error_from_exception_code(
+        &mut self,
+        error: ExceptionCode,
+    ) -> TokioLabjackError;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -235,19 +264,7 @@ impl LabjackInteractions for LabjackClient {
             })?;
         match result {
             Ok(res) => Ok(res),
-            Err(e) => {
-                if let Ok(better_error) = self.get_last_error_details().await {
-                    match better_error {
-                        // sometimes the error details aren't filled in, in which case
-                        // you get LjSuccess. In this case, we should fall back to the original
-                        // error returned from tokio modbus
-                        LabjackError::LjSuccess => Err(TokioLabjackError::from(e)),
-                        _ => Err(TokioLabjackError::from(better_error)),
-                    }
-                } else {
-                    Err(TokioLabjackError::from(e))
-                }
-            }
+            Err(e) => Err(self.detailed_error_from_exception_code(e).await),
         }
     }
 
@@ -376,11 +393,9 @@ impl LabjackInteractions for LabjackClient {
         &mut self,
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         if tags.len() != config.num_addresses as usize {
-            bail!(
-                "The number of provided tags to stream should equal num_addresses in stream config."
-            )
+            return Err(TokioLabjackError::Other("The number of provided tags to stream should equal num_addresses in stream config.".into()));
         }
 
         // Each tag address is 32 bits, which is 2 registers
@@ -389,9 +404,7 @@ impl LabjackInteractions for LabjackClient {
         // TODO: we can improve this by calling write_multiple_registers multiple times as
         // many times as needed. The actual limit is 128 tags streaming at once.
         if num_registers > 123 {
-            bail!(
-                "Max number of registers we can write to is 123, but desired is {}. Reduce number of tags to stream.", num_registers
-            )
+            return Err(TokioLabjackError::Other(format!("Max number of registers we can write to is 123, but desired is {}. Reduce number of tags to stream.", num_registers)));
         }
 
         // write the config values
@@ -441,7 +454,7 @@ impl LabjackInteractions for LabjackClient {
         self.context
             .write_multiple_registers(
                 STREAM_SCANLIST_ADDRESS0.address,
-                &u8_to_u16_vec(&data_bytes).unwrap(),
+                &u8_to_u16_vec(&data_bytes),
             )
             .await??;
 
@@ -454,22 +467,31 @@ impl LabjackInteractions for LabjackClient {
             )
             .await;
 
-        if let Ok(res) = stream_enable_result {
-            if res.len() != 1 {
-                bail!("Unexpected result from starting stream: {:?}", res);
-            }
-            if let HydratedTagValue::U32(val) = res[0] {
-                if val != 1 {
-                    bail!("Unable to start stream!");
+        match stream_enable_result {
+            Ok(res) => {
+                if res.len() != 1 {
+                    Err(TokioLabjackError::Other(format!(
+                        "Unexpected result from starting stream: {:?}",
+                        res
+                    )))
+                } else if let HydratedTagValue::U32(val) = res[0] {
+                    if val != 1 {
+                        Err(TokioLabjackError::Other("Unable to start stream!".into()))
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    Err(TokioLabjackError::Other(format!(
+                        "Unexpected result from starting stream: {:?}",
+                        res[0]
+                    )))
                 }
-            } else {
-                bail!("Unexpected result from starting stream: {:?}", res[0]);
             }
+            Err(e) => Err(e),
         }
-        Ok(())
     }
 
-    async fn stop_stream(&mut self) -> anyhow::Result<()> {
+    async fn stop_stream(&mut self) -> Result<()> {
         // end the stream - check that it was set to 0.
         let stream_disable_result = self
             .read_write_tags(
@@ -479,19 +501,34 @@ impl LabjackInteractions for LabjackClient {
             )
             .await;
 
-        if let Ok(res) = stream_disable_result {
-            if res.len() != 1 {
-                bail!("Unexpected result from ending stream: {:?}", res);
-            }
-            if let HydratedTagValue::U32(val) = res[0] {
-                if val != 0 {
-                    bail!("Unable to end stream!");
+        match stream_disable_result {
+            Ok(res) => {
+                if res.len() != 1 {
+                    Err(TokioLabjackError::Other(format!(
+                        "Unexpected result from ending stream: {:?}",
+                        res
+                    )))
+                } else if let HydratedTagValue::U32(val) = res[0] {
+                    if val != 0 {
+                        Err(TokioLabjackError::Other("Unable to end stream!".into()))
+                    } else {
+                        Ok(())
+                    }
+                } else {
+                    Err(TokioLabjackError::Other(format!(
+                        "Unexpected result from ending stream: {:?}",
+                        res[0]
+                    )))
                 }
-            } else {
-                bail!("Unexpected result from ending stream: {:?}", res[0]);
             }
+            Err(e) => match e {
+                TokioLabjackError::LabjackError(LabjackError::StreamNotRunning) => {
+                    log::debug!("Stream was already stopped, no need to stop again.");
+                    Ok(())
+                }
+                _ => Err(e),
+            },
         }
-        Ok(())
     }
 
     async fn read_calibrations(&mut self) -> Result<T7Calibrations> {
@@ -571,7 +608,7 @@ impl LabjackInteractions for LabjackClient {
         })
     }
 
-    async fn read_stream_cr(&mut self, num_samples: u16) -> anyhow::Result<Vec<u16>> {
+    async fn read_stream_cr(&mut self, num_samples: u16) -> Result<Vec<u16>> {
         // First 4 registers are:
         // Bytes 8-9: Number of samples in this read
         // Bytes 10-11: Backlog Bytes
@@ -591,6 +628,8 @@ impl LabjackInteractions for LabjackClient {
                 num_registers_to_read_ref,
             );
             let mut resultant_bytes = self.read_mbfb(&mut mbfb).await?;
+            log::debug!("raw resultant bytes: {resultant_bytes:?}");
+
             let num_samples_returned = resultant_bytes.get_u16();
             let backlog_bytes = resultant_bytes.get_u16();
             let status_code = resultant_bytes.get_u16();
@@ -639,19 +678,7 @@ impl LabjackInteractions for LabjackClient {
 
         match result {
             Ok(res) => Ok(res),
-            Err(e) => {
-                if let Ok(better_error) = self.get_last_error_details().await {
-                    match better_error {
-                        // sometimes the error details aren't filled in, in which case
-                        // you get LjSuccess. In this case, we should fall back to the original
-                        // error returned from tokio modbus
-                        LabjackError::LjSuccess => Err(TokioLabjackError::from(e)),
-                        _ => Err(TokioLabjackError::from(better_error)),
-                    }
-                } else {
-                    Err(TokioLabjackError::from(e))
-                }
-            }
+            Err(e) => Err(self.detailed_error_from_exception_code(e).await),
         }
     }
 
@@ -664,8 +691,25 @@ impl LabjackInteractions for LabjackClient {
             .await
     }
 
-    async fn get_last_error_details(&mut self) -> anyhow::Result<LabjackError> {
+    async fn get_last_error_details(&mut self) -> Result<LabjackError> {
         let error_code = LAST_ERR_DETAIL.read(self).await?;
         Ok(error_code.try_into()?)
+    }
+
+    async fn detailed_error_from_exception_code(
+        &mut self,
+        error: ExceptionCode,
+    ) -> TokioLabjackError {
+        if let Ok(better_error) = self.get_last_error_details().await {
+            match better_error {
+                // sometimes the error details aren't filled in, in which case
+                // you get LjSuccess. In this case, we should fall back to the original
+                // error returned from tokio modbus
+                LabjackError::LjSuccess => TokioLabjackError::from(error),
+                _ => TokioLabjackError::from(better_error),
+            }
+        } else {
+            TokioLabjackError::from(error)
+        }
     }
 }

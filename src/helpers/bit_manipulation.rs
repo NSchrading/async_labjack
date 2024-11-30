@@ -1,7 +1,5 @@
 //! Helper functions for bit manipulation.
 
-use anyhow::Result;
-
 /// Takes a big-endian 4-byte array and converts it to a big-endian array of 2 16-bit values.
 ///
 /// # Examples
@@ -28,10 +26,10 @@ pub fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
 /// ```
 /// use tokio_labjack_lib::helpers::bit_manipulation::u8_to_u16_vec;
 /// let bytes = [0xA1, 0xB2];
-/// assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0xA1B2]);
+/// assert_eq!(u8_to_u16_vec(&bytes), [0xA1B2]);
 /// ```
-pub fn u8_to_u16_vec(input: &[u8]) -> Result<Vec<u16>> {
-    Ok(input
+pub fn u8_to_u16_vec(input: &[u8]) -> Vec<u16> {
+    input
         .chunks(2)
         .map(|chunk| {
             if chunk.len() == 2 {
@@ -40,7 +38,7 @@ pub fn u8_to_u16_vec(input: &[u8]) -> Result<Vec<u16>> {
                 u16::from_be_bytes([chunk[0], 0])
             }
         })
-        .collect())
+        .collect()
 }
 
 #[cfg(test)]
@@ -65,21 +63,18 @@ mod tests {
     #[test]
     fn test_u8_to_u16_vec() {
         let bytes = [0, 0, 0, 0, 0, 0];
-        assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0, 0, 0]);
+        assert_eq!(u8_to_u16_vec(&bytes), [0, 0, 0]);
 
         let bytes = [0x12, 0x34, 0x56];
-        assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0x1234, 0x5600]);
+        assert_eq!(u8_to_u16_vec(&bytes), [0x1234, 0x5600]);
 
         let bytes = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
-        assert_eq!(
-            u8_to_u16_vec(&bytes).unwrap(),
-            [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF]
-        );
+        assert_eq!(u8_to_u16_vec(&bytes), [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF]);
 
         let bytes = [0xAB, 0xCD, 0x01, 0x21];
-        assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0xABCD, 0x0121]);
+        assert_eq!(u8_to_u16_vec(&bytes), [0xABCD, 0x0121]);
 
         let bytes = [0x10, 0x01, 0xA0, 0x00];
-        assert_eq!(u8_to_u16_vec(&bytes).unwrap(), [0x1001, 0xA000]);
+        assert_eq!(u8_to_u16_vec(&bytes), [0x1001, 0xA000]);
     }
 }

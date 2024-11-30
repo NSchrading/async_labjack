@@ -4,7 +4,7 @@ use crate::client::LabjackClient;
 use crate::client::LabjackInteractions;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
-use anyhow::Result;
+use crate::Result;
 use bytes::{Buf, Bytes, BytesMut};
 use derive_builder::Builder;
 use enum_dispatch::enum_dispatch;
@@ -62,29 +62,40 @@ impl<W> LabjackTag<u64, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u64>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u64> {
         // fetch the data, it is returned in big endian
-        let data = timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.read_input_registers(self.address, 4),
         )
-        .await???;
-        // Combine the four u16s into a single u64 in big endian
-        Ok((u64::from(data[0]) << 48)
-            | (u64::from(data[1]) << 32)
-            | (u64::from(data[2]) << 16)
-            | u64::from(data[3]))
+        .await??;
+
+        match result {
+            Ok(data) => {
+                // Combine the four u16s into a single u64 in big endian
+                Ok((u64::from(data[0]) << 48)
+                    | (u64::from(data[1]) << 32)
+                    | (u64::from(data[2]) << 16)
+                    | u64::from(data[3]))
+            }
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
 impl<R> LabjackTag<f32, R, CanWrite> {
     /// Write an f32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: f32) -> Result<()> {
-        Ok(timeout(
+        let result = timeout(
             client.command_response_timeout,
             client
                 .context
                 .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
         )
-        .await???)
+        .await??;
+
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
@@ -92,28 +103,39 @@ impl<W> LabjackTag<f32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<f32>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<f32> {
         // fetch the data, it is returned in big endian
-        let data = timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.read_input_registers(self.address, 2),
         )
-        .await???;
-        // Combine the two u16s into a single u32 in big endian
-        let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
-        // Convert the u32 to f32
-        Ok(f32::from_bits(combined_value))
+        .await??;
+
+        match result {
+            Ok(data) => {
+                // Combine the two u16s into a single u32 in big endian
+                let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
+                // Convert the u32 to f32
+                Ok(f32::from_bits(combined_value))
+            }
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
 impl<R> LabjackTag<i32, R, CanWrite> {
     /// Write an i32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: i32) -> Result<()> {
-        Ok(timeout(
+        let result = timeout(
             client.command_response_timeout,
             client
                 .context
                 .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
         )
-        .await???)
+        .await??;
+
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
@@ -121,28 +143,39 @@ impl<W> LabjackTag<i32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<i32>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<i32> {
         // fetch the data, it is returned in big endian
-        let data = timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.read_input_registers(self.address, 2),
         )
-        .await???;
-        // Combine the two u16s into a single u32 in big endian
-        let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
-        // Convert the u32 to i32
-        Ok(i32::from_be_bytes(combined_value.to_be_bytes()))
+        .await??;
+
+        match result {
+            Ok(data) => {
+                // Combine the two u16s into a single u32 in big endian
+                let combined_value = (u32::from(data[0]) << 16) | u32::from(data[1]);
+                // Convert the u32 to i32
+                Ok(i32::from_be_bytes(combined_value.to_be_bytes()))
+            }
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
 impl<R> LabjackTag<u32, R, CanWrite> {
     /// Write a u32 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: u32) -> Result<()> {
-        Ok(timeout(
+        let result = timeout(
             client.command_response_timeout,
             client
                 .context
                 .write_multiple_registers(self.address, &be_bytes_to_u16_array(val.to_be_bytes())),
         )
-        .await???)
+        .await??;
+
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
@@ -150,13 +183,19 @@ impl<W> LabjackTag<u32, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u32>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u32> {
         // fetch the data, it is returned in big endian
-        let data = timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.read_input_registers(self.address, 2),
         )
-        .await???;
-        // Combine the two u16s into a single u32 in big endian
-        Ok((u32::from(data[0]) << 16) | u32::from(data[1]))
+        .await??;
+
+        match result {
+            Ok(data) => {
+                // Combine the two u16s into a single u32 in big endian
+                Ok((u32::from(data[0]) << 16) | u32::from(data[1]))
+            }
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
@@ -164,23 +203,32 @@ impl<W> LabjackTag<u16, CanRead, W> {
     /// Read the tag asynchronously and return a future holding a Result<u16>.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u16> {
         // fetch the data, it is returned in big endian
-        let data = timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.read_input_registers(self.address, 1),
         )
-        .await???;
-        Ok(data[0])
+        .await??;
+
+        match result {
+            Ok(data) => Ok(data[0]),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
 impl<R> LabjackTag<u16, R, CanWrite> {
     /// Write a u16 to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: u16) -> Result<()> {
-        Ok(timeout(
+        let result = timeout(
             client.command_response_timeout,
             client.context.write_single_register(self.address, val),
         )
-        .await???)
+        .await??;
+
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 
@@ -276,13 +324,18 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
 impl<R> LabjackTag<Bytes, R, CanWrite> {
     /// Write the specified Bytes to the tag asynchronously and return a future holding a Result.
     pub async fn write(self, client: &mut LabjackClient, val: Bytes) -> Result<()> {
-        Ok(timeout(
+        let result = timeout(
             client.command_response_timeout,
             client
                 .context
-                .write_multiple_registers(self.address, &u8_to_u16_vec(&val)?),
+                .write_multiple_registers(self.address, &u8_to_u16_vec(&val)),
         )
-        .await???)
+        .await??;
+
+        match result {
+            Ok(res) => Ok(res),
+            Err(e) => Err(client.detailed_error_from_exception_code(e).await),
+        }
     }
 }
 

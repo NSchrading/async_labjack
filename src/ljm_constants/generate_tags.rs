@@ -154,8 +154,16 @@ pub enum TokioLabjackError {
     LabjackError(#[from] LabjackError),
     #[error(transparent)]
     TokioModbusExceptionCode(#[from] tokio_modbus::ExceptionCode),
+    #[error("Unknown status code for enum: {0}")]
+    UnknownStatusCode(u16),
     #[error(transparent)]
     TokioModbusError(#[from] tokio_modbus::Error),
+    #[error(transparent)]
+    TimeElapsed(#[from] tokio::time::error::Elapsed),
+    #[error(transparent)]
+    Utf8Error(#[from] std::str::Utf8Error),
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Specialized [`std::result::Result`] type
@@ -304,11 +312,15 @@ pub type Result<T> = std::result::Result<T, TokioLabjackError>;
 
     labjack_errors.sort();
     writeln!(lib_file).unwrap();
-    writeln!(lib_file, "back_to_enum! {{").unwrap();
-    writeln!(lib_file, "\t/// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag").unwrap();
-    writeln!(lib_file, "\t#[derive(Debug, Error)]").unwrap();
-    writeln!(lib_file, "\t#[repr(u16)]").unwrap();
-    writeln!(lib_file, "\tpub enum LabjackError {{").unwrap();
+
+    let enum_wrap = r#"
+back_to_enum! {
+    /// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag
+    #[derive(Debug, Error)]
+    #[repr(u16)]
+    pub enum LabjackError {
+"#;
+    write!(lib_file, "{}", enum_wrap).unwrap();
     for labjack_error in &labjack_errors {
         writeln!(lib_file, "{}", labjack_error).unwrap();
     }

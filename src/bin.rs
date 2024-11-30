@@ -8,7 +8,7 @@ use tokio::net::{TcpSocket, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio::time::{sleep, Duration};
-use tokio_labjack_lib::client::LabjackClient;
+use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions};
 use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
 use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
 use tokio_labjack_lib::helpers::stream::process_stream;
@@ -36,47 +36,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap();
 
-    if let Err(e) = STREAM_ENABLE.write(&mut client, 0).await {
-        log::debug!("{e}");
+    if let Err(e) = client.stop_stream().await {
+        // Usually this is just because the stream is already stopped. That's fine.
+        println!("Unable to stop stream before disconnect: {e}");
     }
 
-    let mut i = 1.1;
-    loop {
-        println!("Connecting...");
-        let mut result =
-            LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
-        while let Err(e) = result {
-            println!("Error connecting: {e:?}");
-            sleep(Duration::from_millis(1000)).await;
-            println!("Connecting...");
-            result =
-                LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
-        }
-        println!("Succesfully connected.");
-        let mut ljc = result.unwrap();
-
-        ljc.command_response_timeout = Duration::from_millis(100);
-
-        loop {
-            if TEST_FLOAT32.write(&mut ljc, i).await.is_err() {
-                println!(
-                    "failed to get write response within {:?}",
-                    ljc.command_response_timeout
-                );
-                break;
-            }
-            let value = timeout(Duration::from_millis(100), TEST_FLOAT32.read(&mut ljc)).await;
-            if value.is_err() {
-                println!("did not receive value within 100 ms");
-                break;
-            }
-            println!("TEST_FLOAT32: {:?}", value.unwrap().unwrap());
-            i += 5.0;
-            sleep(Duration::from_millis(10)).await;
-        }
-        println!("Disconnecting");
-        ljc.disconnect().await;
+    if let Err(e) = client.stop_stream().await {
+        // Usually this is just because the stream is already stopped. That's fine.
+        println!("Unable to stop stream before disconnect: {e}");
     }
+
+    if let Err(e) = client.stop_stream().await {
+        // Usually this is just because the stream is already stopped. That's fine.
+        println!("Unable to stop stream before disconnect: {e}");
+    }
+
+    println!("connected");
+
+    // let mut i = 1.1;
+    // loop {
+    //     println!("Connecting...");
+    //     let mut result =
+    //         LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
+    //     while let Err(e) = result {
+    //         println!("Error connecting: {e:?}");
+    //         sleep(Duration::from_millis(1000)).await;
+    //         println!("Connecting...");
+    //         result =
+    //             LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await;
+    //     }
+    //     println!("Succesfully connected.");
+    //     let mut ljc = result.unwrap();
+
+    //     ljc.command_response_timeout = Duration::from_millis(100);
+
+    //     loop {
+    //         if TEST_FLOAT32.write(&mut ljc, i).await.is_err() {
+    //             println!(
+    //                 "failed to get write response within {:?}",
+    //                 ljc.command_response_timeout
+    //             );
+    //             break;
+    //         }
+    //         let value = timeout(Duration::from_millis(100), TEST_FLOAT32.read(&mut ljc)).await;
+    //         if value.is_err() {
+    //             println!("did not receive value within 100 ms");
+    //             break;
+    //         }
+    //         println!("TEST_FLOAT32: {:?}", value.unwrap().unwrap());
+    //         i += 5.0;
+    //         sleep(Duration::from_millis(10)).await;
+    //     }
+    //     println!("Disconnecting");
+    //     ljc.disconnect().await;
+    // }
 
     println!("Disconnecting");
     client.disconnect().await?;
