@@ -12,10 +12,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 use tokio::time::Duration;
 use tokio_labjack_lib::client::LabjackClient;
 use tokio_labjack_lib::{
-    LabjackError, FILE_IO_CLOSE, FILE_IO_DIR_CHANGE, FILE_IO_DIR_CURRENT, FILE_IO_DIR_FIRST,
-    FILE_IO_DIR_NEXT, FILE_IO_OPEN, FILE_IO_PATH_READ, FILE_IO_PATH_READ_LEN_BYTES,
-    FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ, FILE_IO_SIZE_BYTES,
-    LAST_ERR_DETAIL,
+    LabjackError, TokioLabjackError, FILE_IO_CLOSE, FILE_IO_DIR_CHANGE, FILE_IO_DIR_CURRENT,
+    FILE_IO_DIR_FIRST, FILE_IO_DIR_NEXT, FILE_IO_OPEN, FILE_IO_PATH_READ,
+    FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
+    FILE_IO_SIZE_BYTES,
 };
 
 #[tokio::main()]
@@ -66,11 +66,23 @@ async fn main() {
     println!("path: {path:?}");
     println!("file byte size: {num_file_content_bytes:?}");
 
-    // you write until this returns an error FileIoEndOfCwd to go through the files in cwd
-    // FILE_IO_DIR_NEXT.write(&mut client, 1).await;
-    // let err_code = LAST_ERR_DETAIL.read(&mut client).await.unwrap();
-    // let x: LabjackError = err_code.try_into().unwrap();
-    // println!("{x:?}");
+    // If you want to iterate until you find the file you wish to read, you must
+    // write to FILE_IO_DIR_NEXT to go to the next path, then read FILE_IO_PATH_READ again. You can
+    // do this repeatedly until it returns a FileIoEndOfCwd error.
+    loop {
+        match FILE_IO_DIR_NEXT.write(&mut client, 1).await {
+            Ok(_) => {
+                // read FILE_IO_PATH_READ
+            }
+            Err(e) => {
+                assert!(matches!(
+                    e,
+                    TokioLabjackError::LabjackError(LabjackError::FileIoEndOfCwd)
+                ));
+                break; // Exit the loop
+            }
+        }
+    }
 
     // test read a file
     let file_path = format!("{cwd}{path}");

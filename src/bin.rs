@@ -9,8 +9,9 @@ use tokio::sync::mpsc;
 use tokio::time::timeout;
 use tokio::time::{sleep, Duration};
 use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions};
-use tokio_labjack_lib::helpers::calibrations::AinCalibrationBuilder;
-use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, AinCalibration};
+use tokio_labjack_lib::helpers::calibrations::Calibrations;
+use tokio_labjack_lib::helpers::calibrations::T7AinCalibrationBuilder;
+use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, T7AinCalibration};
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
@@ -36,20 +37,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap();
 
-    if let Err(e) = client.stop_stream().await {
-        // Usually this is just because the stream is already stopped. That's fine.
-        println!("Unable to stop stream before disconnect: {e}");
-    }
+    println!("{:?}", client.labjack_kind);
 
-    if let Err(e) = client.stop_stream().await {
-        // Usually this is just because the stream is already stopped. That's fine.
-        println!("Unable to stop stream before disconnect: {e}");
-    }
+    let bin = AIN1_BINARY.read(&mut client).await.unwrap();
+    let t7_cal = match client.read_calibrations().await.unwrap() {
+        Calibrations::T7Calibrations(cal) => cal,
+        _ => panic!("Unexpected calibration!"),
+    };
+    let val = ain_binary_to_volts(
+        (bin >> 8) as u16,
+        t7_cal.hr_gain_1_ain_cal.positive_slope,
+        t7_cal.hr_gain_1_ain_cal.voltage_offset,
+    );
+    println!("{val:?}");
+    // if let Err(e) = client.stop_stream().await {
+    //     // Usually this is just because the stream is already stopped. That's fine.
+    //     println!("Unable to stop stream before disconnect: {e}");
+    // }
 
-    if let Err(e) = client.stop_stream().await {
-        // Usually this is just because the stream is already stopped. That's fine.
-        println!("Unable to stop stream before disconnect: {e}");
-    }
+    // if let Err(e) = client.stop_stream().await {
+    //     // Usually this is just because the stream is already stopped. That's fine.
+    //     println!("Unable to stop stream before disconnect: {e}");
+    // }
+
+    // if let Err(e) = client.stop_stream().await {
+    //     // Usually this is just because the stream is already stopped. That's fine.
+    //     println!("Unable to stop stream before disconnect: {e}");
+    // }
 
     println!("connected");
 

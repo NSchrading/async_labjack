@@ -15,7 +15,8 @@ use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio_labjack_lib::client::LabjackClient;
 use tokio_labjack_lib::client::LabjackInteractions;
-use tokio_labjack_lib::helpers::calibrations::ain_binary_to_volts;
+use tokio_labjack_lib::helpers::calibrations::t7_ain_binary_to_volts;
+use tokio_labjack_lib::helpers::calibrations::Calibrations;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
@@ -39,7 +40,10 @@ async fn main() {
     AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
 
     // We need the calibration constants in order to convert the binary values to volts.
-    let t7_cal = client.read_calibrations().await.unwrap();
+    let t7_cal = match client.read_calibrations().await.unwrap() {
+        Calibrations::T7Calibrations(cal) => cal,
+        _ => panic!("Unexpected calibration!"),
+    };
     println!("Calibration constants: {t7_cal:?}");
 
     // First let's read both the 24-bit binary value and the converted value from the labjack
@@ -59,7 +63,7 @@ async fn main() {
     // calibration constants.
     // If using a T7, change this to t7_cal.hs_gain_1_ain_cal.
     // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
-    let volt_value = ain_binary_to_volts(raw_24_bit_ain1_binary, &t7_cal.hr_gain_1_ain_cal);
+    let volt_value = t7_ain_binary_to_volts(raw_24_bit_ain1_binary, &t7_cal.hr_gain_1_ain_cal);
 
     let ain_volt_converted_on_device = match readings[1] {
         HydratedTagValue::F32(val) => val,
@@ -114,7 +118,7 @@ async fn main() {
         // Note that we use hs instead of hr calibrations here. Streaming always uses the lower
         // precision 16-bit ADCs and always returns u16s.
         // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
-        let volt_value = ain_binary_to_volts(value as u32, &t7_cal.hs_gain_1_ain_cal);
+        let volt_value = t7_ain_binary_to_volts(value as u32, &t7_cal.hs_gain_1_ain_cal);
         println!("{volt_value:?}V");
         total_count += 1;
     }
