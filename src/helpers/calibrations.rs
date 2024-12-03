@@ -1,4 +1,12 @@
+//! Calibration data for converting raw binary ADC values to voltages.
+//! See [Labjack documentation](https://support.labjack.com/docs/20-0-internal-flash-t-series-datasheet)
+//! for more info.
+
 use derive_builder::Builder;
+
+/// The starting address of internal flash where the calibration constants reside.
+/// This is only valid for T4 and T7
+pub const CAL_CONST_STARTING_ADDRESS: u32 = 0x3C4000;
 
 /// Supported kinds of calibrations
 #[derive(Debug)]
@@ -7,12 +15,14 @@ pub enum Calibrations {
     T7Calibrations(T7Calibrations),
 }
 
+/// Convert a T4Calibrations to a Calibrations
 impl From<T4Calibrations> for Calibrations {
     fn from(cal: T4Calibrations) -> Self {
         Calibrations::T4Calibrations(cal)
     }
 }
 
+/// Convert a T7Calibrations to a Calibrations
 impl From<T7Calibrations> for Calibrations {
     fn from(cal: T7Calibrations) -> Self {
         Calibrations::T7Calibrations(cal)
@@ -162,7 +172,7 @@ pub struct T7Calibrations {
     pub ain_bias_current: f32,
 }
 
-/// Convert a binary analog input value (e.g. from streaming or reading AIN<N>_BINARY) to a floating
+/// Convert a binary analog input value (e.g. from streaming or reading `AIN<N>_BINARY`) to a floating
 /// point voltage value using the provided AinCalibration.
 pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibration) -> f32 {
     let ain_bin_float: f32 = if ain_binary > (u16::MAX as u32) {
@@ -179,9 +189,9 @@ pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibratio
     (ain_bin_float - ain_calibration.binary_center) * ain_calibration.positive_slope
 }
 
-/// Convert a binary analog input value (e.g. from streaming or reading AIN<N>_BINARY) to a floating
-/// point voltage value using the provided slope and offset. This only works on lower precision
-/// (16-bit) ADC values. If using a t7 or t7-pro, it is recommended to use
+/// Convert a binary analog input value (e.g. from streaming or reading `AIN<N>_BINARY`) to a
+/// floating point voltage value using the provided slope and offset. This only works on lower
+/// precision (16-bit) ADC values. If using a t7 or t7-pro, it is recommended to use
 /// t7_ain_binary_to_volts instead.
 ///
 /// # Examples

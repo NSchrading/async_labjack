@@ -23,8 +23,8 @@ use tokio_labjack_lib::{
     STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CAPTURE_16,
     STREAM_DATA_CR, STREAM_DEBUG_GET_SELF_INDEX, STREAM_ENABLE, STREAM_NUM_ADDRESSES,
     STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ,
-    STREAM_SETTLING_US, SYSTEM_TIMER_20HZ, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16,
-    TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
+    STREAM_SETTLING_US, SYSTEM_REBOOT, SYSTEM_TIMER_20HZ, TEST, TEST_FLOAT32, TEST_INT32,
+    TEST_UINT16, TEST_UINT32, WIFI_MAC, WIFI_SSID_DEFAULT,
 };
 
 #[tokio::main()]
@@ -104,6 +104,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     println!("Disconnecting");
     //     ljc.disconnect().await;
     // }
+
+    SYSTEM_REBOOT.write(&mut client, 0x4C4A0000).await?;
 
     println!("Disconnecting");
     client.disconnect().await?;

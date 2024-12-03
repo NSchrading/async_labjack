@@ -59,7 +59,7 @@ impl<T, R, W> LabjackTag<T, R, W> {
 }
 
 impl<W> LabjackTag<u64, CanRead, W> {
-    /// Read the tag asynchronously and return a future holding a Result<u64>.
+    /// Read the tag asynchronously and return a future holding a `Result<u64>`.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u64> {
         // fetch the data, it is returned in big endian
         let result = timeout(
@@ -100,7 +100,7 @@ impl<R> LabjackTag<f32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<f32, CanRead, W> {
-    /// Read the tag asynchronously and return a future holding a Result<f32>.
+    /// Read the tag asynchronously and return a future holding a `Result<f32>`.
     pub async fn read(self, client: &mut LabjackClient) -> Result<f32> {
         // fetch the data, it is returned in big endian
         let result = timeout(
@@ -140,7 +140,7 @@ impl<R> LabjackTag<i32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<i32, CanRead, W> {
-    /// Read the tag asynchronously and return a future holding a Result<i32>.
+    /// Read the tag asynchronously and return a future holding a `Result<i32>`.
     pub async fn read(self, client: &mut LabjackClient) -> Result<i32> {
         // fetch the data, it is returned in big endian
         let result = timeout(
@@ -180,7 +180,7 @@ impl<R> LabjackTag<u32, R, CanWrite> {
 }
 
 impl<W> LabjackTag<u32, CanRead, W> {
-    /// Read the tag asynchronously and return a future holding a Result<u32>.
+    /// Read the tag asynchronously and return a future holding a `Result<u32>`.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u32> {
         // fetch the data, it is returned in big endian
         let result = timeout(
@@ -200,7 +200,7 @@ impl<W> LabjackTag<u32, CanRead, W> {
 }
 
 impl<W> LabjackTag<u16, CanRead, W> {
-    /// Read the tag asynchronously and return a future holding a Result<u16>.
+    /// Read the tag asynchronously and return a future holding a `Result<u16>`.
     pub async fn read(self, client: &mut LabjackClient) -> Result<u16> {
         // fetch the data, it is returned in big endian
         let result = timeout(
@@ -234,7 +234,7 @@ impl<R> LabjackTag<u16, R, CanWrite> {
 
 impl<W> LabjackTag<Bytes, CanRead, W> {
     /// Read a specified number of bytes from the tag asynchronously and return a future holding a
-    /// Result<Bytes>. This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
+    /// `Result<Bytes>`. This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
     pub async fn read(self, client: &mut LabjackClient, num_bytes: u32) -> Result<Bytes> {
@@ -297,7 +297,7 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
     }
 
     /// Read a specified number of bytes from the tag asynchronously and return a future holding a
-    /// Result<String>. The resultant String must be valid utf8.
+    /// `Result<String>`. The resultant String must be valid utf8.
     /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
@@ -310,7 +310,7 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
     }
 
     /// Read a specified number of bytes from the file tag asynchronously and return a future holding a
-    /// Result<String>. The resultant String must be valid utf8.
+    /// `Result<String>`. The resultant String must be valid utf8.
     /// This is valid for Labjack [Buffer Registers](https://support.labjack.com/docs/3-1-modbus-map-t-series-datasheet#id-3.1ModbusMap[T-SeriesDatasheet]-BufferRegisters).
     /// Note: This may incur multiple read calls to the underlying Labjack device depending on how
     /// many bytes need to be read.
@@ -489,6 +489,8 @@ pub enum ReadableLabjackTag {
     U16ReadWrite(LabjackTag<u16, CanRead, CanWrite>),
 }
 
+/// A struct holding stream configuration information. This is passed to `start_stream` to
+/// configure stream mode properly on the labjack.
 #[derive(Builder, Debug, PartialEq)]
 pub struct StreamConfig {
     /// Scans per second. Samples per second = scanRate * numAddresses
@@ -496,16 +498,26 @@ pub struct StreamConfig {
     pub scan_rate: f32,
     /// Required field. Number of addresses to include in the scan list.
     pub num_addresses: u32,
-    /// max is 512
+    /// Number of samples sent in each packet from the labjack. Max is 512.
+    /// The labjack will buffer the data internally until this is reached.
     #[builder(default = 512)]
     pub samples_per_packet: u32,
+    /// Time in microseconds to allow signals to settle after switching the mux.
+    /// Does not apply to the 1st channel in the scan list, as that settling is
+    /// controlled by scan rate (the time from the last channel until the start of the next scan).
+    /// Default = 0. When set to less than 1, automatic settling will be used.
+    /// The automatic settling behavior varies by device. Ignored for T8.
     #[builder(default = 0.0)]
     pub settling_us: f32,
+    /// How accurately to sample when streaming
+    /// T8 valid values: 0-16. 0 will use the best resolution for the specified data rate.
+    /// T7: 0-8. Default value of 0 corresponds to an index of 1.
+    /// T4: 0-5. Default value of 0 corresponds to an index of 1.
     #[builder(default = 0)]
     pub resolution_index: u32,
     /// Size of the stream data buffer in bytes. A value of 0 equates to the default value.
-    /// Must be a power of 2. Size in samples is STREAM_BUFFER_SIZE_BYTES/2.
-    /// Size in scans is (STREAM_BUFFER_SIZE_BYTES/2)/STREAM_NUM_ADDRESSES.
+    /// Must be a power of 2. Size in samples is STREAM_BUFFER_SIZE_BYTES / 2.
+    /// Size in scans is (STREAM_BUFFER_SIZE_BYTES / 2) / STREAM_NUM_ADDRESSES.
     /// Changes while stream is running do not affect the currently running stream.
     /// T8: Max size is 262144. Default size is 4096.
     /// T7: Max size is 32768. Default size is 4096.
@@ -519,6 +531,8 @@ pub struct StreamConfig {
     /// All other bits are reserved.
     #[builder(default = 1)]
     pub auto_target: u32,
+    /// How many scans to perform before ending. This is 'stream burst mode' if > 0. If 0, the
+    /// scan runs continuously.
     #[builder(default = 0)]
     pub num_scans: u32,
 }

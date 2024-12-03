@@ -1,4 +1,5 @@
-//! Functions for constructing and interacting with the custom [Labjack Modbus Feedback function](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76))
+//! Functions for constructing and interacting with the custom
+//! [Labjack Modbus Feedback function](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76))
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::iter::zip;
 use tokio_modbus::Address;
@@ -137,6 +138,7 @@ impl<'a> ModbusFeedbackFrame<'a> {
             bytes.put_u16(*address);
             bytes.put_u8(*count);
         }
+        log::debug!("Raw bytes of mbfb: {bytes:?}");
 
         bytes.freeze()
     }

@@ -25,6 +25,9 @@ thiserror = "*"
 tokio = { version = "1.4", features = ["rt-multi-thread", "macros", "time"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
 
+[dev-dependencies]
+mockall = "*"
+
 [profile.release]
 codegen-units = 1
 lto = true

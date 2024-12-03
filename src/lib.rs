@@ -7,6 +7,7 @@ pub mod client;
 pub mod helpers;
 pub mod labjack_tag;
 pub mod modbus_feedback;
+pub mod prelude;
 
 #[derive(Debug, Error)]
 pub enum TokioLabjackError {

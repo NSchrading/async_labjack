@@ -5,13 +5,14 @@ use crate::helpers::calibrations::{
     Calibrations, T4AinHVCalibrationBuilder, T4AinLVCalibrationBuilder, T4Calibrations,
     T4CalibrationsBuilder, T4DacCalibrationBuilder, T4SpecVCalibrationBuilder,
     T7AinCalibrationBuilder, T7Calibrations, T7CalibrationsBuilder, T7DacCalibrationBuilder,
-    TemperatureCalibrationBuilder,
+    TemperatureCalibrationBuilder, CAL_CONST_STARTING_ADDRESS,
 };
 use crate::labjack_tag::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
 };
 use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
+use crate::modbus_feedback::MBFB_FUNCTION_CODE;
 use crate::{
     LabjackError, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER, LAST_ERR_DETAIL, PRODUCT_ID,
     STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR, STREAM_ENABLE,
@@ -35,6 +36,7 @@ use tokio_modbus::prelude::tcp;
 use tokio_modbus::prelude::Writer;
 use tokio_modbus::prelude::{ExceptionCode, Request, Response};
 
+/// The kind of labjack this device is, based on the PRODUCT_ID register.
 #[derive(Debug)]
 pub enum LabjackKind {
     T4,
@@ -43,6 +45,32 @@ pub enum LabjackKind {
     Digit,
 }
 
+/// The client used to interact with the labjack. To use, first call `connect` or
+/// `connect_with_timeout` to construct a LabjackClient.
+///
+/// context: The underlying tokio_modbus::client::Context handling modbus interactions.
+/// address: The IP address of the labjack.
+/// command_response_timeout: The duration to wait for a response from the labjack when
+///     calling command response functions on it. Defaults to 5 seconds.
+/// labjack_kind: The kind of labjack that this is. See `LabjackKind`.
+///
+/// # Examples
+///
+/// ```no_run
+/// use tokio_labjack_lib::client::LabjackClient;
+/// use tokio::time::Duration;
+/// use tokio_labjack_lib::AIN0;
+///
+/// #[tokio::main()]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let labjack_address = "192.168.0.100:502".parse()?;
+///     let mut client = LabjackClient::connect_with_timeout(labjack_address, Duration::from_millis(3000))
+///         .await?;
+///     let val = AIN0.read(&mut client).await?;
+///     client.disconnect().await?;
+///     Ok(())
+/// }
+/// ```
 #[derive(Debug)]
 pub struct LabjackClient {
     pub context: Context,
@@ -52,10 +80,13 @@ pub struct LabjackClient {
 }
 
 impl LabjackClient {
+    /// Connect to the labjack at address socket_addr. If the labjack is not connectable,
+    /// this function may hang until the socket is finally closed. If you want a timeout,
+    /// on the connection attempt, use `connect_with_timeout`.
     pub async fn connect(socket_addr: SocketAddr) -> Result<Self> {
         let address = socket_addr;
 
-        // since we're constructing the socket and then connecting, we could add
+        // todo: since we're constructing the socket and then connecting, we could add
         // socket configuration
         let socket = match TcpSocket::new_v4() {
             Ok(res) => res,
@@ -90,6 +121,8 @@ impl LabjackClient {
         Ok(labjack_client)
     }
 
+    /// Connect to the labjack at address socket_addr, waiting for the timeout_duration to connect.
+    /// If unable to connect within timeout_duration, then returns an error.
     pub async fn connect_with_timeout(
         socket_addr: SocketAddr,
         timeout_duration: Duration,
@@ -97,6 +130,8 @@ impl LabjackClient {
         timeout(timeout_duration, Self::connect(socket_addr)).await?
     }
 
+    /// Disconnect from the labjack. On disconnection, will attempt to stop streaming if a stream
+    /// is running.
     pub async fn disconnect(&mut self) -> io::Result<()> {
         if let Err(e) = self.stop_stream().await {
             match e {
@@ -116,6 +151,7 @@ impl LabjackClient {
         self.context.disconnect().await
     }
 
+    /// Get the kind of labjack from PRODUCT_ID
     async fn get_labjack_kind(&mut self) -> Result<LabjackKind> {
         let product_id = PRODUCT_ID.read(self).await?;
         match product_id {
@@ -140,7 +176,7 @@ impl LabjackClient {
 //     }
 // }
 
-/// An extra trait for the tokio_modbus Client, allowing for reads (or reads and writes) of higher
+/// An extra trait for the tokio_modbus Client, allowing for reads and writes of higher
 /// level ModbusFeedbackFrames or ReadableLabjackTags / WritableLabjackTags.
 #[async_trait]
 pub trait LabjackInteractions {
@@ -181,17 +217,28 @@ pub trait LabjackInteractions {
         tag_values: &[HydratedTagValue; N],
     ) -> Result<Vec<HydratedTagValue>>;
 
+    /// Read the currently configured STREAM_ values from the labjack and return them as a
+    /// `StreamConfig`. See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
+    /// for more details on streaming.
     async fn read_stream_config(&mut self) -> Result<StreamConfig>;
+
+    /// Start a stream using the provided StreamConfig values. If using command-response streaming
+    /// (auto_target = 16), then you can make use of the `read_stream_cr` function to read the
+    /// stream values. If using spontaneous stream mode, then you can make use of the
+    /// `process_stream` function to asynchronously process the stream values sent to port 702.
+    /// See the stream examples in the examples directory.
+    /// See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
+    /// for more details on streaming.
+    /// You should take care to stop the stream before ending a program, otherwise it may continue
+    /// to run on your device.
     async fn start_stream(
         &mut self,
         config: StreamConfig,
         tags: Vec<ReadableLabjackTag>,
     ) -> Result<()>;
-    async fn stop_stream(&mut self) -> Result<()>;
 
-    async fn read_t7_calibrations(&mut self) -> Result<T7Calibrations>;
-    async fn read_t4_calibrations(&mut self) -> Result<T4Calibrations>;
-    async fn read_calibrations(&mut self) -> Result<Calibrations>;
+    /// Stop streaming on the labjack.
+    async fn stop_stream(&mut self) -> Result<()>;
 
     /// Attempt to read num_samples stream samples from the STREAM_DATA_CR stream buffer.
     /// If there are fewer samples in the buffer than num_samples, you will get back
@@ -210,6 +257,17 @@ pub trait LabjackInteractions {
     /// the scan list.
     async fn read_stream_cr(&mut self, num_samples: u16) -> Result<Vec<u16>>;
 
+    /// Read calibration constants from T7 internal flash. T7-only.
+    /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
+    async fn read_t7_calibrations(&mut self) -> Result<T7Calibrations>;
+
+    /// Read calibration constants from T4 internal flash. T4-only.
+    /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
+    async fn read_t4_calibrations(&mut self) -> Result<T4Calibrations>;
+
+    /// Read calibration constants from internal flash.
+    async fn read_calibrations(&mut self) -> Result<Calibrations>;
+
     /// Write asynchronously from the labjack via the Modbus Feedback function.
     /// Takes a ModbusFeedbackFrame and returns a future of the result.
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
@@ -227,8 +285,14 @@ pub trait LabjackInteractions {
         tag_values: &[HydratedTagValue; N],
     ) -> Result<()>;
 
+    /// If an error occurs when interacting with the labjack, this function can return additional
+    /// error details via the LAST_ERR_DETAIL register. Returns the error as a `LabjackError` enum.
     async fn get_last_error_details(&mut self) -> Result<LabjackError>;
 
+    /// Attempt to read LAST_ERR_DETAIL, returning a TokioLabjackError with more error details
+    /// if possible. If LAST_ERR_DETAIL is LjSuccess, then returns the original error that
+    /// prompted wanting more details. If an error occurs while trying to read LAST_ERR_DETAIL,
+    /// then this also returns the original error that prompted wanting more details.
     async fn detailed_error_from_exception_code(
         &mut self,
         error: ExceptionCode,
@@ -244,8 +308,11 @@ fn bytes_to_hydrated_tags(
     let mut hydrated_result = Vec::with_capacity(read_tags.len());
     for tag in read_tags {
         match tag.register_count() {
+            // 16 bit registers
             1 => hydrated_result.push(tag.hydrate(&mut bytes.copy_to_bytes(2))),
+            // 32 bit registers
             2 => hydrated_result.push(tag.hydrate(&mut bytes.copy_to_bytes(4))),
+            // 64 bit registers
             4 => hydrated_result.push(tag.hydrate(&mut bytes.copy_to_bytes(8))),
             _ => unreachable!(
                 "There should never be a tag with a register count not equal to 1, 2, or 4."
@@ -297,12 +364,12 @@ impl LabjackInteractions for LabjackClient {
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
         let result = self
             .context
-            .call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
+            .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {
                 result.map(|response| match response {
                     Response::Custom(function_code, words) => {
-                        debug_assert_eq!(function_code, 0x4C);
+                        debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
                         words
                     }
                     _ => unreachable!("call() should reject mismatching responses"),
@@ -315,9 +382,23 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
-        assert!(mbfb.write_addresses.is_empty());
-        assert!(mbfb.write_counts.is_empty());
-        assert!(mbfb.write_data.is_empty());
+        if !mbfb.write_addresses.is_empty() {
+            return Err(TokioLabjackError::Other(
+                "Write addresses should be empty in a read mbfb".into(),
+            ));
+        }
+
+        if !mbfb.write_counts.is_empty() {
+            return Err(TokioLabjackError::Other(
+                "Write counts should be empty in a read mbfb".into(),
+            ));
+        }
+
+        if !mbfb.write_data.is_empty() {
+            return Err(TokioLabjackError::Other(
+                "Write data should be empty in a read mbfb".into(),
+            ));
+        }
 
         let bytes = mbfb.to_bytes_mut();
         self.read_write_frame_bytes(bytes).await
@@ -368,7 +449,7 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn read_stream_config(&mut self) -> Result<StreamConfig> {
-        self.read_tags(&[
+        let tags_to_read = [
             STREAM_SCANRATE_HZ.into(),
             STREAM_NUM_ADDRESSES.into(),
             STREAM_SAMPLES_PER_PACKET.into(),
@@ -377,62 +458,77 @@ impl LabjackInteractions for LabjackClient {
             STREAM_BUFFER_SIZE_BYTES.into(),
             STREAM_AUTO_TARGET.into(),
             STREAM_NUM_SCANS.into(),
-        ])
-        .await
-        .map(|response| {
-            assert!(response.len() == 8);
-            let scan_rate = match response[0] {
-                HydratedTagValue::F32(val) => val,
-                _ => panic!("scan_rate must be an F32"),
-            };
+        ];
 
-            let num_addresses = match response[1] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("num_addresses must be a U32"),
-            };
+        let result = self.read_tags(&tags_to_read).await?;
 
-            let samples_per_packet = match response[2] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("samples_per_packet must be a U32"),
-            };
+        let result_len = result.len();
+        let expected_len = tags_to_read.len();
+        if result_len != expected_len {
+            return Err(TokioLabjackError::Other(format!(
+                "Unexpected response length from read_tags: {}. Expected length of {}",
+                result_len, expected_len
+            )));
+        }
 
-            let settling_us = match response[3] {
-                HydratedTagValue::F32(val) => val,
-                _ => panic!("settling_us must be an F32"),
-            };
+        let scan_rate = match result[0] {
+            HydratedTagValue::F32(val) => val,
+            _ => panic!("scan_rate must be an F32"),
+        };
 
-            let resolution_index = match response[4] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("resolution_index must be a U32"),
-            };
+        let num_addresses = match result[1] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("num_addresses must be a U32"),
+        };
 
-            let buffer_size_bytes = match response[5] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("buffer_size_bytes must be a U32"),
-            };
+        let samples_per_packet = match result[2] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("samples_per_packet must be a U32"),
+        };
 
-            let auto_target = match response[6] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("auto_target must be a U32"),
-            };
+        let settling_us = match result[3] {
+            HydratedTagValue::F32(val) => val,
+            _ => panic!("settling_us must be an F32"),
+        };
 
-            let num_scans = match response[7] {
-                HydratedTagValue::U32(val) => val,
-                _ => panic!("num_scans must be a U32"),
-            };
+        let resolution_index = match result[4] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("resolution_index must be a U32"),
+        };
 
-            let mut config = StreamConfigBuilder::default();
-            config
-                .scan_rate(scan_rate)
-                .num_addresses(num_addresses)
-                .samples_per_packet(samples_per_packet)
-                .settling_us(settling_us)
-                .resolution_index(resolution_index)
-                .buffer_size_bytes(buffer_size_bytes)
-                .auto_target(auto_target)
-                .num_scans(num_scans);
-            config.build().unwrap()
-        })
+        let buffer_size_bytes = match result[5] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("buffer_size_bytes must be a U32"),
+        };
+
+        let auto_target = match result[6] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("auto_target must be a U32"),
+        };
+
+        let num_scans = match result[7] {
+            HydratedTagValue::U32(val) => val,
+            _ => panic!("num_scans must be a U32"),
+        };
+
+        let mut config = StreamConfigBuilder::default();
+        config
+            .scan_rate(scan_rate)
+            .num_addresses(num_addresses)
+            .samples_per_packet(samples_per_packet)
+            .settling_us(settling_us)
+            .resolution_index(resolution_index)
+            .buffer_size_bytes(buffer_size_bytes)
+            .auto_target(auto_target)
+            .num_scans(num_scans);
+        let result = config.build();
+        match result {
+            Ok(val) => Ok(val),
+            Err(e) => Err(TokioLabjackError::Other(format!(
+                "Unable to build stream config: {}",
+                e
+            ))),
+        }
     }
 
     async fn start_stream(
@@ -586,7 +682,16 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn read_t4_calibrations(&mut self) -> Result<T4Calibrations> {
-        let cal_constant_starting_address: u32 = 0x3C4000;
+        match self.labjack_kind {
+            LabjackKind::T4 => {}
+            _ => {
+                return Err(TokioLabjackError::Other(format!(
+                    "{:?} not valid, expected {:?}",
+                    self.labjack_kind,
+                    LabjackKind::T4
+                )));
+            }
+        }
 
         // Write the calibration constant starting address to INTERNAL_FLASH_READ_POINTER
         // then read all 38 registers (76 bytes) of calibration constants.
@@ -595,83 +700,95 @@ impl LabjackInteractions for LabjackClient {
             &[INTERNAL_FLASH_READ_POINTER.address],
             &[38],
             &[2],
-            Bytes::from(cal_constant_starting_address.to_be_bytes().to_vec()),
+            Bytes::from(CAL_CONST_STARTING_ADDRESS.to_be_bytes().to_vec()),
         );
-        self.read_write_mbfb(&mut mbfb).await.map(|mut response| {
-            assert!(
-                response.len() == 76,
-                "Expected to receive 76 bytes of data, but received {} bytes instead.",
-                response.len()
-            );
+        let mut result = self.read_write_mbfb(&mut mbfb).await?;
+        let result_len = result.len();
+        let expected_len = 76;
 
-            let mut t4_cals = T4CalibrationsBuilder::default().build().unwrap();
+        if result_len != expected_len {
+            return Err(TokioLabjackError::Other(format!(
+                "Expected to receive {} bytes of data, but received {} bytes instead.",
+                expected_len, result_len
+            )));
+        }
 
-            for cal_idx in 0..4 {
-                let slope = response.get_f32();
-                let offset = response.get_f32();
-                let ain_cal = T4AinHVCalibrationBuilder::default()
-                    .slope(slope)
-                    .offset(offset)
-                    .build()
-                    .unwrap();
-                match cal_idx {
-                    0 => t4_cals.ain0_cal = ain_cal,
-                    1 => t4_cals.ain1_cal = ain_cal,
-                    2 => t4_cals.ain2_cal = ain_cal,
-                    3 => t4_cals.ain3_cal = ain_cal,
-                    _ => unreachable!("cal_idx should max out at 3"),
-                }
-            }
+        let mut t4_cals = T4CalibrationsBuilder::default().build().unwrap();
 
-            let slope = response.get_f32();
-            let offset = response.get_f32();
-            let lv_cal = T4AinLVCalibrationBuilder::default()
+        for cal_idx in 0..4 {
+            let slope = result.get_f32();
+            let offset = result.get_f32();
+            let ain_cal = T4AinHVCalibrationBuilder::default()
                 .slope(slope)
                 .offset(offset)
                 .build()
                 .unwrap();
-            t4_cals.lv_cal = lv_cal;
+            match cal_idx {
+                0 => t4_cals.ain0_cal = ain_cal,
+                1 => t4_cals.ain1_cal = ain_cal,
+                2 => t4_cals.ain2_cal = ain_cal,
+                3 => t4_cals.ain3_cal = ain_cal,
+                _ => unreachable!("cal_idx should max out at 3"),
+            }
+        }
 
-            let slope = response.get_f32();
-            let offset = response.get_f32();
-            let spec_v_cal = T4SpecVCalibrationBuilder::default()
+        let slope = result.get_f32();
+        let offset = result.get_f32();
+        let lv_cal = T4AinLVCalibrationBuilder::default()
+            .slope(slope)
+            .offset(offset)
+            .build()
+            .unwrap();
+        t4_cals.lv_cal = lv_cal;
+
+        let slope = result.get_f32();
+        let offset = result.get_f32();
+        let spec_v_cal = T4SpecVCalibrationBuilder::default()
+            .slope(slope)
+            .offset(offset)
+            .build()
+            .unwrap();
+        t4_cals.spec_v_cal = spec_v_cal;
+
+        for cal_idx in 0..2 {
+            let slope = result.get_f32();
+            let offset = result.get_f32();
+            let dac_cal = T4DacCalibrationBuilder::default()
                 .slope(slope)
                 .offset(offset)
                 .build()
                 .unwrap();
-            t4_cals.spec_v_cal = spec_v_cal;
-
-            for cal_idx in 0..2 {
-                let slope = response.get_f32();
-                let offset = response.get_f32();
-                let dac_cal = T4DacCalibrationBuilder::default()
-                    .slope(slope)
-                    .offset(offset)
-                    .build()
-                    .unwrap();
-                match cal_idx {
-                    0 => t4_cals.dac0_cal = dac_cal,
-                    1 => t4_cals.dac1_cal = dac_cal,
-                    _ => unreachable!("cal_idx should max out at 1"),
-                }
+            match cal_idx {
+                0 => t4_cals.dac0_cal = dac_cal,
+                1 => t4_cals.dac1_cal = dac_cal,
+                _ => unreachable!("cal_idx should max out at 1"),
             }
+        }
 
-            let t_slope = response.get_f32();
-            let t_offset = response.get_f32();
-            let temperature_cal = TemperatureCalibrationBuilder::default()
-                .slope(t_slope)
-                .offset(t_offset)
-                .build()
-                .unwrap();
-            t4_cals.temperature_cal = temperature_cal;
-            t4_cals.ain_bias_current = response.get_f32();
+        let t_slope = result.get_f32();
+        let t_offset = result.get_f32();
+        let temperature_cal = TemperatureCalibrationBuilder::default()
+            .slope(t_slope)
+            .offset(t_offset)
+            .build()
+            .unwrap();
+        t4_cals.temperature_cal = temperature_cal;
+        t4_cals.ain_bias_current = result.get_f32();
 
-            t4_cals
-        })
+        Ok(t4_cals)
     }
 
     async fn read_t7_calibrations(&mut self) -> Result<T7Calibrations> {
-        let cal_constant_starting_address: u32 = 0x3C4000;
+        match self.labjack_kind {
+            LabjackKind::T7 => {}
+            _ => {
+                return Err(TokioLabjackError::Other(format!(
+                    "{:?} not valid, expected {:?}",
+                    self.labjack_kind,
+                    LabjackKind::T7
+                )));
+            }
+        }
 
         // Write the calibration constant starting address to INTERNAL_FLASH_READ_POINTER
         // then read all 82 registers (164 bytes) of calibration constants.
@@ -680,71 +797,75 @@ impl LabjackInteractions for LabjackClient {
             &[INTERNAL_FLASH_READ_POINTER.address],
             &[82],
             &[2],
-            Bytes::from(cal_constant_starting_address.to_be_bytes().to_vec()),
+            Bytes::from(CAL_CONST_STARTING_ADDRESS.to_be_bytes().to_vec()),
         );
-        self.read_write_mbfb(&mut mbfb).await.map(|mut response| {
-            assert!(
-                response.len() == 164,
-                "Expected to receive 164 bytes of data, but received {} bytes instead.",
-                response.len()
-            );
+        let mut result = self.read_write_mbfb(&mut mbfb).await?;
 
-            let mut t7_cals = T7CalibrationsBuilder::default().build().unwrap();
+        let result_len = result.len();
+        let expected_len = 164;
 
-            for cal_idx in 0..8 {
-                let positive_slope = response.get_f32();
-                let negative_slope = response.get_f32();
-                let binary_center = response.get_f32();
-                let voltage_offset = response.get_f32();
-                let ain_cal = T7AinCalibrationBuilder::default()
-                    .binary_center(binary_center)
-                    .positive_slope(positive_slope)
-                    .negative_slope(negative_slope)
-                    .voltage_offset(voltage_offset)
-                    .build()
-                    .unwrap();
-                match cal_idx {
-                    0 => t7_cals.hs_gain_1_ain_cal = ain_cal,
-                    1 => t7_cals.hs_gain_10_ain_cal = ain_cal,
-                    2 => t7_cals.hs_gain_100_ain_cal = ain_cal,
-                    3 => t7_cals.hs_gain_1000_ain_cal = ain_cal,
-                    4 => t7_cals.hr_gain_1_ain_cal = ain_cal,
-                    5 => t7_cals.hr_gain_10_ain_cal = ain_cal,
-                    6 => t7_cals.hr_gain_100_ain_cal = ain_cal,
-                    7 => t7_cals.hr_gain_1000_ain_cal = ain_cal,
-                    _ => unreachable!("cal_idx should max out at 7"),
-                }
-            }
+        if result_len != expected_len {
+            return Err(TokioLabjackError::Other(format!(
+                "Expected to receive {} bytes of data, but received {} bytes instead.",
+                expected_len, result_len
+            )));
+        }
 
-            for cal_idx in 0..2 {
-                let slope = response.get_f32();
-                let offset = response.get_f32();
-                let dac_cal = T7DacCalibrationBuilder::default()
-                    .slope(slope)
-                    .offset(offset)
-                    .build()
-                    .unwrap();
-                match cal_idx {
-                    0 => t7_cals.dac0_cal = dac_cal,
-                    1 => t7_cals.dac1_cal = dac_cal,
-                    _ => unreachable!("cal_idx should max out at 1"),
-                }
-            }
+        let mut t7_cals = T7CalibrationsBuilder::default().build().unwrap();
 
-            let t_slope = response.get_f32();
-            let t_offset = response.get_f32();
-            let temperature_cal = TemperatureCalibrationBuilder::default()
-                .slope(t_slope)
-                .offset(t_offset)
+        for cal_idx in 0..8 {
+            let positive_slope = result.get_f32();
+            let negative_slope = result.get_f32();
+            let binary_center = result.get_f32();
+            let voltage_offset = result.get_f32();
+            let ain_cal = T7AinCalibrationBuilder::default()
+                .binary_center(binary_center)
+                .positive_slope(positive_slope)
+                .negative_slope(negative_slope)
+                .voltage_offset(voltage_offset)
                 .build()
                 .unwrap();
-            t7_cals.temperature_cal = temperature_cal;
-            t7_cals.i_source_10u = response.get_f32();
-            t7_cals.i_source_200u = response.get_f32();
-            t7_cals.ain_bias_current = response.get_f32();
+            match cal_idx {
+                0 => t7_cals.hs_gain_1_ain_cal = ain_cal,
+                1 => t7_cals.hs_gain_10_ain_cal = ain_cal,
+                2 => t7_cals.hs_gain_100_ain_cal = ain_cal,
+                3 => t7_cals.hs_gain_1000_ain_cal = ain_cal,
+                4 => t7_cals.hr_gain_1_ain_cal = ain_cal,
+                5 => t7_cals.hr_gain_10_ain_cal = ain_cal,
+                6 => t7_cals.hr_gain_100_ain_cal = ain_cal,
+                7 => t7_cals.hr_gain_1000_ain_cal = ain_cal,
+                _ => unreachable!("cal_idx should max out at 7"),
+            }
+        }
 
-            t7_cals
-        })
+        for cal_idx in 0..2 {
+            let slope = result.get_f32();
+            let offset = result.get_f32();
+            let dac_cal = T7DacCalibrationBuilder::default()
+                .slope(slope)
+                .offset(offset)
+                .build()
+                .unwrap();
+            match cal_idx {
+                0 => t7_cals.dac0_cal = dac_cal,
+                1 => t7_cals.dac1_cal = dac_cal,
+                _ => unreachable!("cal_idx should max out at 1"),
+            }
+        }
+
+        let t_slope = result.get_f32();
+        let t_offset = result.get_f32();
+        let temperature_cal = TemperatureCalibrationBuilder::default()
+            .slope(t_slope)
+            .offset(t_offset)
+            .build()
+            .unwrap();
+        t7_cals.temperature_cal = temperature_cal;
+        t7_cals.i_source_10u = result.get_f32();
+        t7_cals.i_source_200u = result.get_f32();
+        t7_cals.ain_bias_current = result.get_f32();
+
+        Ok(t7_cals)
     }
 
     async fn read_stream_cr(&mut self, num_samples: u16) -> Result<Vec<u16>> {
@@ -791,24 +912,31 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
-        assert!(mbfb.read_addresses.is_empty());
-        assert!(mbfb.read_counts.is_empty());
+        if !mbfb.read_addresses.is_empty() {
+            return Err(TokioLabjackError::Other(
+                "Read addresses should be empty in a write mbfb".into(),
+            ));
+        }
+
+        if !mbfb.read_counts.is_empty() {
+            return Err(TokioLabjackError::Other(
+                "Read counts should be empty in a write mbfb".into(),
+            ));
+        }
 
         let bytes = mbfb.to_bytes_mut();
-        log::debug!("Raw bytes of mbfb: {bytes:?}");
-
         self.write_bytes(bytes).await
     }
 
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()> {
         let result = self
             .context
-            .call(Request::Custom(0x4C, Cow::Borrowed(&bytes)))
+            .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
             .await
             .map(|result| {
                 result.map(|response| match response {
                     Response::Custom(function_code, words) => {
-                        debug_assert_eq!(function_code, 0x4C);
+                        debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
                         debug_assert_eq!(words.len(), 0);
                     }
                     _ => unreachable!("call() should reject mismatching responses"),

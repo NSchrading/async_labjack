@@ -66,24 +66,6 @@ async fn main() {
     println!("path: {path:?}");
     println!("file byte size: {num_file_content_bytes:?}");
 
-    // If you want to iterate until you find the file you wish to read, you must
-    // write to FILE_IO_DIR_NEXT to go to the next path, then read FILE_IO_PATH_READ again. You can
-    // do this repeatedly until it returns a FileIoEndOfCwd error.
-    loop {
-        match FILE_IO_DIR_NEXT.write(&mut client, 1).await {
-            Ok(_) => {
-                // read FILE_IO_PATH_READ
-            }
-            Err(e) => {
-                assert!(matches!(
-                    e,
-                    TokioLabjackError::LabjackError(LabjackError::FileIoEndOfCwd)
-                ));
-                break; // Exit the loop
-            }
-        }
-    }
-
     // test read a file
     let file_path = format!("{cwd}{path}");
     let mut filename = BytesMut::from(&file_path[..]);
@@ -126,6 +108,25 @@ async fn main() {
 
     // Finally, close the file.
     FILE_IO_CLOSE.write(&mut client, 1).await.unwrap();
+
+    // Instead of doing the above where we read the first file we found,
+    // if you want to iterate until you find the file you wish to read, you must
+    // write to FILE_IO_DIR_NEXT to go to the next path, then read FILE_IO_PATH_READ again. You can
+    // do this repeatedly until it returns a FileIoEndOfCwd error.
+    loop {
+        match FILE_IO_DIR_NEXT.write(&mut client, 1).await {
+            Ok(_) => {
+                // read FILE_IO_PATH_READ
+            }
+            Err(e) => {
+                assert!(matches!(
+                    e,
+                    TokioLabjackError::LabjackError(LabjackError::FileIoEndOfCwd)
+                ));
+                break; // Exit the loop
+            }
+        }
+    }
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
