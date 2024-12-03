@@ -16,5 +16,5 @@ cd ../..
 # Run the tag generator
 ./src/ljm_constants/target/release/generate_tags || echo "Tag generation failed."
 
-# fixup any suggestions, e.g. wrapping html links
-cargo fix --lib -p tokio_labjack || echo "cargo fix --lib failed"
+# autoformat the line lengths, etc
+cargo fmt  || echo "cargo fmt failed"
