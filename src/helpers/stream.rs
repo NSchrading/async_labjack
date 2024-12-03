@@ -6,12 +6,13 @@ use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
 
-/// Given a TcpStream receiving stream data, parse the data into u16s and
-/// transmit them to the provided tx tokio::sync::mpsc::Sender. If stream burst was configured
-/// then this function will eventually end once the StreamBurstComplete signal is sent
-/// from the labjack. Otherwise this may run forever or until the receive end closes or an
+/// Given a [`TcpStream`] receiving stream data, parse the data into u16s and
+/// transmit them to the provided tx [`tokio::sync::mpsc::Sender`]. If stream burst was configured
+/// then this function will eventually end once the [`LabjackError::StreamBurstComplete`] signal
+/// is sent from the labjack. Otherwise this may run forever or until the receive end closes or an
 /// unexpected error occurs. This function will handle stream auto recovery if necessary,
-/// and end if StreamScanOverlap, StreamAutoRecoverEndOverflow, or StreamBufferFull occurs.
+/// and end if [`LabjackError::StreamScanOverlap`], [`LabjackError::StreamAutoRecoverEndOverflow`],
+/// or [`LabjackError::StreamBufferFull`] occurs.
 pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()> {
     // See https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet#id-3.2.4Low-LevelStream[T-SeriesDatasheet]-DataCollection
     // for information on the packet format

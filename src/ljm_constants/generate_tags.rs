@@ -316,7 +316,8 @@ pub type Result<T> = std::result::Result<T, TokioLabjackError>;
 
     let enum_wrap = r#"
 back_to_enum! {
-    /// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag
+    /// Enum containing all labjack error codes. These can be obtained by reading the
+    /// [`LAST_ERR_DETAIL`] tag
     #[derive(Debug, Error)]
     #[repr(u16)]
     pub enum LabjackError {

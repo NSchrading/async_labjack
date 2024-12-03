@@ -10015,7 +10015,8 @@ pub const DGT_REQ_FW_UPDATE: LabjackTag<u32, CannotRead, CanWrite> = LabjackTag:
 pub const SYSTEM_REBOOT: LabjackTag<u32, CannotRead, CanWrite> = LabjackTag::new(61998);
 
 back_to_enum! {
-    /// Enum containing all labjack error codes. These can be obtained by reading the LAST_ERR_DETAIL tag
+    /// Enum containing all labjack error codes. These can be obtained by reading the
+    /// [`LAST_ERR_DETAIL`] tag
     #[derive(Debug, Error)]
     #[repr(u16)]
     pub enum LabjackError {

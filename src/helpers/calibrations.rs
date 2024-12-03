@@ -15,21 +15,21 @@ pub enum Calibrations {
     T7Calibrations(T7Calibrations),
 }
 
-/// Convert a T4Calibrations to a Calibrations
+/// Convert a [`T4Calibrations`] to a [`Calibrations`]
 impl From<T4Calibrations> for Calibrations {
     fn from(cal: T4Calibrations) -> Self {
         Calibrations::T4Calibrations(cal)
     }
 }
 
-/// Convert a T7Calibrations to a Calibrations
+/// Convert a [`T7Calibrations`] to a [`Calibrations`]
 impl From<T7Calibrations> for Calibrations {
     fn from(cal: T7Calibrations) -> Self {
         Calibrations::T7Calibrations(cal)
     }
 }
 
-/// Calibration constants for T4 high voltage analog input conversion
+/// Calibration constants for T4 high voltage analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for +/- 10V HV range AIN0.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -40,7 +40,7 @@ pub struct T4AinHVCalibration {
     pub offset: f32,
 }
 
-/// Calibration constants for T4 low voltage analog input conversion
+/// Calibration constants for T4 low voltage analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for 0-2.5V LV range AIN0.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -51,7 +51,7 @@ pub struct T4AinLVCalibration {
     pub offset: f32,
 }
 
-/// Calibration constants for T4 SpecV
+/// Calibration constants for T4 SpecV.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibration.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -62,7 +62,7 @@ pub struct T4SpecVCalibration {
     pub offset: f32,
 }
 
-/// Calibration constants for T4 DAC conversion
+/// Calibration constants for T4 DAC conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for DAC0.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -100,7 +100,7 @@ pub struct T4Calibrations {
     pub ain_bias_current: f32,
 }
 
-/// Calibration constants for T7 analog input conversion
+/// Calibration constants for T7 analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for the +/- 10V range.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -115,7 +115,7 @@ pub struct T7AinCalibration {
     pub voltage_offset: f32,
 }
 
-/// Calibration constants for T7 DAC conversion
+/// Calibration constants for T7 DAC conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -126,7 +126,7 @@ pub struct T7DacCalibration {
     pub offset: f32,
 }
 
-/// Calibration constants for T7 temperature conversion
+/// Calibration constants for T7 temperature conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations.
 #[derive(Builder, Debug, PartialEq, Clone)]
@@ -199,6 +199,7 @@ pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibratio
 /// ```
 /// use tokio_labjack_lib::helpers::calibrations::T4CalibrationsBuilder;
 /// use tokio_labjack_lib::helpers::calibrations::ain_binary_to_volts;
+///
 /// let calibrations = T4CalibrationsBuilder::default().build().unwrap();
 /// ain_binary_to_volts(65535, calibrations.ain0_cal.slope, calibrations.ain0_cal.offset);
 /// ```

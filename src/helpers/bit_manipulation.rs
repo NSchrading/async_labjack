@@ -6,6 +6,7 @@
 ///
 /// ```
 /// use tokio_labjack_lib::helpers::bit_manipulation::be_bytes_to_u16_array;
+///
 /// let bytes = [0x98, 0x76, 0x54, 0x32];
 /// assert_eq!(be_bytes_to_u16_array(bytes), [0x9876, 0x5432]);
 /// ```
@@ -25,6 +26,7 @@ pub fn be_bytes_to_u16_array(bytes: [u8; 4]) -> [u16; 2] {
 ///
 /// ```
 /// use tokio_labjack_lib::helpers::bit_manipulation::u8_to_u16_vec;
+///
 /// let bytes = [0xA1, 0xB2];
 /// assert_eq!(u8_to_u16_vec(&bytes), [0xA1B2]);
 /// ```

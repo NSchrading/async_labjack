@@ -22,13 +22,14 @@ pub struct ModbusFeedbackFrame<'a> {
 }
 
 impl<'a> ModbusFeedbackFrame<'a> {
-    /// Constructs a new `ModbusFeedbackFrame`.
+    /// Constructs a new [`ModbusFeedbackFrame`].
     ///
     /// # Examples
     /// ```
     /// use tokio_labjack_lib::{AIN0, AIN1, TEST_FLOAT32};
     /// use bytes::Bytes;
     /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    ///
     /// // A feedback frame that will read AIN0 and AIN1 and write 5.4321 to TEST_FLOAT32.
     /// let mut mbfb = ModbusFeedbackFrame::new(
     ///     &[AIN0.address, AIN1.address],
@@ -54,12 +55,13 @@ impl<'a> ModbusFeedbackFrame<'a> {
         }
     }
 
-    /// Constructs a new `ModbusFeedbackFrame` for reading only.
+    /// Constructs a new [`ModbusFeedbackFrame`] for reading only.
     ///
     /// # Examples
     /// ```
     /// use tokio_labjack_lib::{AIN0, AIN1};
     /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    ///
     /// // A feedback frame that will read AIN0 and AIN1.
     /// let mut mbfb = ModbusFeedbackFrame::new_read_frame(
     ///     &[AIN0.address, AIN1.address],
@@ -76,13 +78,14 @@ impl<'a> ModbusFeedbackFrame<'a> {
         }
     }
 
-    /// Constructs a new `ModbusFeedbackFrame` for writing only.
+    /// Constructs a new [`ModbusFeedbackFrame`] for writing only.
     ///
     /// # Examples
     /// ```
     /// use tokio_labjack_lib::{TEST_FLOAT32, TEST_INT32};
     /// use bytes::Bytes;
     /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    ///
     /// // A feedback frame that will write 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32.
     /// let mut bytes_vec = 5.4321_f32.to_be_bytes().to_vec();
     /// bytes_vec.extend((-314_i32).to_be_bytes());
@@ -106,8 +109,8 @@ impl<'a> ModbusFeedbackFrame<'a> {
         }
     }
 
-    /// Convert the `ModbusFeedbackFrame` to `Bytes`. Mutable because it affects the underlying
-    /// `write_data` Bytes in the `ModbusFeedbackFrame`.
+    /// Convert the [`ModbusFeedbackFrame`] to [`Bytes`]. Mutable because it affects the underlying
+    /// `write_data` [`Bytes`] in the [`ModbusFeedbackFrame`].
     ///
     /// This function adds write bytes before read bytes. This allows for single operations that
     /// write to data and then return their newly written values as reads.

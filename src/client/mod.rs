@@ -45,14 +45,17 @@ pub enum LabjackKind {
     Digit,
 }
 
-/// The client used to interact with the labjack. To use, first call `connect` or
-/// `connect_with_timeout` to construct a LabjackClient.
+/// The client used to interact with the labjack. To use, first call [`LabjackClient::connect`] or
+/// [`LabjackClient::connect_with_timeout`] to construct a [`LabjackClient`].
 ///
-/// context: The underlying tokio_modbus::client::Context handling modbus interactions.
+/// context: The underlying [`tokio_modbus::client::Context`] handling modbus interactions.
+///
 /// address: The IP address of the labjack.
+///
 /// command_response_timeout: The duration to wait for a response from the labjack when
 ///     calling command response functions on it. Defaults to 5 seconds.
-/// labjack_kind: The kind of labjack that this is. See `LabjackKind`.
+///
+/// labjack_kind: The kind of labjack that this is. See [`LabjackKind`].
 ///
 /// # Examples
 ///
@@ -82,7 +85,7 @@ pub struct LabjackClient {
 impl LabjackClient {
     /// Connect to the labjack at address socket_addr. If the labjack is not connectable,
     /// this function may hang until the socket is finally closed. If you want a timeout,
-    /// on the connection attempt, use `connect_with_timeout`.
+    /// on the connection attempt, use [`LabjackClient::connect_with_timeout`].
     pub async fn connect(socket_addr: SocketAddr) -> Result<Self> {
         let address = socket_addr;
 
@@ -121,8 +124,8 @@ impl LabjackClient {
         Ok(labjack_client)
     }
 
-    /// Connect to the labjack at address socket_addr, waiting for the timeout_duration to connect.
-    /// If unable to connect within timeout_duration, then returns an error.
+    /// Connect to the labjack at address `socket_addr`, waiting for the `timeout_duration` to
+    /// connect. If unable to connect within `timeout_duration`, then returns an error.
     pub async fn connect_with_timeout(
         socket_addr: SocketAddr,
         timeout_duration: Duration,
@@ -177,26 +180,26 @@ impl LabjackClient {
 // }
 
 /// An extra trait for the tokio_modbus Client, allowing for reads and writes of higher
-/// level ModbusFeedbackFrames or ReadableLabjackTags / WritableLabjackTags.
+/// level [`ModbusFeedbackFrame`]s or [`ReadableLabjackTag`]s / [`WritableLabjackTag`]s.
 #[async_trait]
 pub trait LabjackInteractions {
     /// Read and/or write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a Bytes representation of a well-formed MBFB packet and returns a future of the
-    /// resulting Bytes.
+    /// Takes a [`Bytes`] representation of a well-formed MBFB packet and returns a future of the
+    /// resulting [`Bytes`].
     /// This is not atomic, meaning if an error occurs mid-way through the operation, some writes
     /// or reads may take effect but the remaining operations will not.
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes>;
 
     /// Read asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a ModbusFeedbackFrame and returns a future of the resulting Bytes.
+    /// Takes a [`ModbusFeedbackFrame`] and returns a future of the resulting Bytes.
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes>;
 
     /// Read asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes ReadableLabjackTags and returns a future of the resulting HydratedTagValues.
+    /// Takes ReadableLabjackTags and returns a future of the resulting [`HydratedTagValue`]s.
     async fn read_tags(&mut self, tags: &[ReadableLabjackTag]) -> Result<Vec<HydratedTagValue>>;
 
     /// Read and/or write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a ModbusFeedbackFrame and returns a future of the resulting Bytes.
+    /// Takes a [`ModbusFeedbackFrame`] and returns a future of the resulting [`Bytes`].
     /// Writes are done before reads. This allows for single operations that
     /// write to data and then return their newly written values as reads.
     /// This is not atomic, meaning if an error occurs mid-way through the operation, some writes
@@ -204,9 +207,9 @@ pub trait LabjackInteractions {
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes>;
 
     /// Read and/or write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes ReadableLabjackTags, WritableLabjackTags, and the HydratedTagValues to write for each
-    /// WritableLabjackTag and returns a future of the resulting HydratedTagValues.
-    /// Writes are done before reads. This allows for single operations that
+    /// Takes [`ReadableLabjackTag`]s, [`WritableLabjackTag`]s, and the [`HydratedTagValue`]s to
+    /// write for each [`WritableLabjackTag`] and returns a future of the resulting
+    /// [`HydratedTagValue`]s. Writes are done before reads. This allows for single operations that
     /// write to data and then return their newly written values as reads.
     /// This is not atomic, meaning if an error occurs mid-way through the operation, some writes
     /// or reads may take effect but the remaining operations will not.
@@ -217,18 +220,22 @@ pub trait LabjackInteractions {
         tag_values: &[HydratedTagValue; N],
     ) -> Result<Vec<HydratedTagValue>>;
 
-    /// Read the currently configured STREAM_ values from the labjack and return them as a
-    /// `StreamConfig`. See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
+    /// Read the currently configured `STREAM_` values from the labjack and return them as a
+    /// [`StreamConfig`]. See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
     /// for more details on streaming.
     async fn read_stream_config(&mut self) -> Result<StreamConfig>;
 
-    /// Start a stream using the provided StreamConfig values. If using command-response streaming
-    /// (auto_target = 16), then you can make use of the `read_stream_cr` function to read the
-    /// stream values. If using spontaneous stream mode, then you can make use of the
-    /// `process_stream` function to asynchronously process the stream values sent to port 702.
+    /// Start a stream using the provided [`StreamConfig`] values. If using command-response
+    /// streaming (auto_target = 16), then you can make use of the [`LabjackClient::read_stream_cr`]
+    /// function to read the stream values. If using spontaneous stream mode, then you can make use
+    /// of the [`crate::helpers::stream::process_stream`] function to asynchronously process the stream
+    /// values sent to port 702.
+    ///
     /// See the stream examples in the examples directory.
+    ///
     /// See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
     /// for more details on streaming.
+    ///
     /// You should take care to stop the stream before ending a program, otherwise it may continue
     /// to run on your device.
     async fn start_stream(
@@ -240,21 +247,26 @@ pub trait LabjackInteractions {
     /// Stop streaming on the labjack.
     async fn stop_stream(&mut self) -> Result<()>;
 
-    /// Attempt to read num_samples stream samples from the STREAM_DATA_CR stream buffer.
+    /// Attempt to read num_samples stream samples from the [`STREAM_DATA_CR`] stream buffer.
+    ///
     /// If there are fewer samples in the buffer than num_samples, you will get back
     /// that smaller amount. If there are more samples in the buffer than num_samples, you
     /// will get back exactly num_samples and the remaining samples in the buffer can be read
-    /// later. The values in the returned vector are interleaved according to the current
-    /// streaming configuration. For example, if you are streaming AIN0 and AIN1, the first
-    /// value will be the first sample of AIN0, the second will be the first sample for AIN1,
-    /// the third will be the second sample of AIN0, etc.
-    /// Some streamable registers (e.g. DIO4_EF_READ_A) have 32-bit data.
+    /// later.
+    ///
+    /// The values in the returned vector are interleaved according to the current
+    /// streaming configuration. For example, if you are streaming [`crate::AIN0`] and
+    /// [`crate::AIN1`], the first value will be the first sample of [`crate::AIN0`], the second
+    /// will be the first sample for [`crate::AIN1`], the third will be the second sample of
+    /// [`crate::AIN0`], etc.
+    ///
+    /// Some streamable registers (e.g. [`crate::DIO4_EF_READ_A`]) have 32-bit data.
     /// When streaming a register that produces 32-bit data, the lower 16 bits (LSW) will be
-    /// returned and the upper 16 bits (MSW) will be saved in STREAM_DATA_CAPTURE_16.
-    /// To get the full 32-bit value, add STREAM_DATA_CAPTURE_16 to the stream scan list after any
-    /// applicable 32-bit register, then combine the two values in software
-    /// (LSW + 65536*MSW). Note that STREAM_DATA_CAPTURE_16 may be placed in multiple locations in
-    /// the scan list.
+    /// returned and the upper 16 bits (MSW) will be saved in [`crate::STREAM_DATA_CAPTURE_16`].
+    /// To get the full 32-bit value, add  [`crate::STREAM_DATA_CAPTURE_16`] to the stream scan
+    /// list after any applicable 32-bit register, then combine the two values in software
+    /// (LSW + 65536*MSW). Note that  [`crate::STREAM_DATA_CAPTURE_16`] may be placed in multiple
+    /// locations in the scan list to stream multiple 32 bit tags.
     async fn read_stream_cr(&mut self, num_samples: u16) -> Result<Vec<u16>>;
 
     /// Read calibration constants from T7 internal flash. T7-only.
@@ -269,7 +281,7 @@ pub trait LabjackInteractions {
     async fn read_calibrations(&mut self) -> Result<Calibrations>;
 
     /// Write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes a ModbusFeedbackFrame and returns a future of the result.
+    /// Takes a [`ModbusFeedbackFrame`] and returns a future of the result.
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()>;
 
     /// Write asynchronously from the labjack via the Modbus Feedback function.
@@ -277,8 +289,8 @@ pub trait LabjackInteractions {
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()>;
 
     /// Write asynchronously from the labjack via the Modbus Feedback function.
-    /// Takes WritableLabjackTags and the HydratedTagValues to write and returns a future of
-    /// the result.
+    /// Takes [`WritableLabjackTag`]s and the [`HydratedTagValue`]s to write and returns a
+    /// future of the result.
     async fn write_tags<const N: usize>(
         &mut self,
         tags: &[WritableLabjackTag; N],
@@ -286,13 +298,15 @@ pub trait LabjackInteractions {
     ) -> Result<()>;
 
     /// If an error occurs when interacting with the labjack, this function can return additional
-    /// error details via the LAST_ERR_DETAIL register. Returns the error as a `LabjackError` enum.
+    /// error details via the [`LAST_ERR_DETAIL`] register. Returns the error as a [`LabjackError`]
+    /// enum.
     async fn get_last_error_details(&mut self) -> Result<LabjackError>;
 
-    /// Attempt to read LAST_ERR_DETAIL, returning a TokioLabjackError with more error details
-    /// if possible. If LAST_ERR_DETAIL is LjSuccess, then returns the original error that
-    /// prompted wanting more details. If an error occurs while trying to read LAST_ERR_DETAIL,
-    /// then this also returns the original error that prompted wanting more details.
+    /// Attempt to read [`LAST_ERR_DETAIL`], returning a [`TokioLabjackError`] with more error
+    /// details if possible. If [`LAST_ERR_DETAIL`] is [`LabjackError::LjSuccess`], then returns the
+    /// original error that prompted wanting more details. If an error occurs while trying to
+    /// read [`LAST_ERR_DETAIL`], then this also returns the original error that prompted
+    /// wanting more details.
     async fn detailed_error_from_exception_code(
         &mut self,
         error: ExceptionCode,
