@@ -376,22 +376,23 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 #[async_trait]
 impl LabjackInteractions for LabjackClient {
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
-        let result = self
+        match self
             .context
             .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
             .await
-            .map(|result| {
-                result.map(|response| match response {
-                    Response::Custom(function_code, words) => {
-                        debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
-                        words
-                    }
-                    _ => unreachable!("call() should reject mismatching responses"),
-                })
-            })?;
-        match result {
-            Ok(res) => Ok(res),
-            Err(e) => Err(self.detailed_error_from_exception_code(e).await),
+        {
+            // Convert tokio_modbus::Error to TokioLabjackError
+            Ok(Ok(response)) => match response {
+                Response::Custom(function_code, words) => {
+                    debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
+                    Ok(words)
+                }
+                _ => unreachable!("call() should reject mismatching responses"),
+            },
+            // got tokio_modbus::ExceptionCode
+            Ok(Err(e)) => Err(self.detailed_error_from_exception_code(e).await),
+            // got tokio_modbus::Error
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -615,15 +616,14 @@ impl LabjackInteractions for LabjackClient {
             .await??;
 
         // start the stream - check that it was set to 1.
-        let stream_enable_result = self
+        match self
             .read_write_tags(
                 &[STREAM_ENABLE.into()],
                 &[STREAM_ENABLE.into()],
                 &[HydratedTagValue::U32(1)],
             )
-            .await;
-
-        match stream_enable_result {
+            .await
+        {
             Ok(res) => {
                 if res.len() != 1 {
                     Err(TokioLabjackError::Other(format!(

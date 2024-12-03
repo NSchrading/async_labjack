@@ -445,7 +445,7 @@ impl<W> Readable for LabjackTag<u16, CanRead, W> {
 
 /// A HydratedTagValue simply holds the underlying value for a tag, e.g. a u32 for a
 /// `LabjackTag<u32, CanRead, W>`
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum HydratedTagValue {
     U64(u64),
     F32(f32),

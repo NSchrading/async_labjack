@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use bytes::Bytes;
+use bytes::BufMut;
+use bytes::{Bytes, BytesMut};
 use core::future;
 use core::future::Future;
 use mockall::mock;
@@ -9,6 +10,7 @@ use std::pin::Pin;
 use tokio::time::Duration;
 use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions, LabjackKind};
 use tokio_labjack_lib::helpers::bit_manipulation::be_bytes_to_u16_array;
+use tokio_labjack_lib::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::modbus_feedback::MBFB_FUNCTION_CODE;
@@ -282,4 +284,108 @@ async fn test_read_write_frame_bytes() {
     };
     let result = mock_labjack_client.read_write_frame_bytes(mbfb_bytes).await;
     assert_eq!(result.unwrap(), mock_returned_bytes.clone());
+}
+
+#[tokio::test]
+async fn test_read_mbfb() {
+    let mut mock_client = MockModbusClient::new();
+
+    let read_address = 0;
+    let read_counts = 10;
+    let read_address_ref = &[read_address];
+    let read_counts_ref = &[read_counts];
+
+    let mut mbfb = ModbusFeedbackFrame::new_read_frame(read_address_ref, read_counts_ref);
+    let mbfb_bytes = mbfb.to_bytes_mut();
+    let expected_bytes = mbfb_bytes.clone();
+
+    let mock_returned_bytes = Bytes::from(vec![0x01, 0x10]);
+    let expected_returned_bytes = mock_returned_bytes.clone();
+
+    // custom bytes call
+    mock_client
+        .expect_call()
+        .withf(move |req| match req {
+            Request::Custom(function_code, bytes) => {
+                matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_bytes)
+                    && function_code == &MBFB_FUNCTION_CODE
+            }
+            _ => false,
+        })
+        .returning(move |_| {
+            Box::pin(future::ready(Ok(Ok(Response::Custom(
+                MBFB_FUNCTION_CODE,
+                expected_returned_bytes.clone(),
+            )))))
+        });
+
+    let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+    let mut mock_labjack_client = LabjackClient {
+        context,
+        address: "127.0.0.1:502".parse().unwrap(),
+        command_response_timeout: Duration::from_secs(1),
+        labjack_kind: LabjackKind::T7,
+    };
+
+    let result = mock_labjack_client.read_mbfb(&mut mbfb).await;
+    assert_eq!(result.unwrap(), mock_returned_bytes.clone());
+}
+
+#[tokio::test]
+async fn test_read_tags() {
+    let mut mock_client = MockModbusClient::new();
+
+    let u64_tag_address = 0;
+    let u32_tag_address = 1004;
+    let f32_tag_address = 4242;
+
+    let u64_tag: LabjackTag<u64, CanRead, CannotWrite> = LabjackTag::new(u64_tag_address);
+    let u32_tag: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(u32_tag_address);
+    let f32_tag: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(f32_tag_address);
+
+    let address_ref = &[u64_tag_address, u32_tag_address, f32_tag_address];
+
+    let mut mbfb = ModbusFeedbackFrame::new_read_frame(address_ref, &[4, 2, 2]);
+    let expected_mbfb_bytes = mbfb.to_bytes_mut();
+
+    let expected_returned_bytes = Bytes::from(vec![
+        0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+        0x88,
+    ]);
+
+    mock_client
+        .expect_call()
+        .withf(move |req| match req {
+            Request::Custom(function_code, bytes) => {
+                matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_mbfb_bytes)
+                    && function_code == &MBFB_FUNCTION_CODE
+            }
+            _ => false,
+        })
+        .returning(move |_| {
+            Box::pin(future::ready(Ok(Ok(Response::Custom(
+                MBFB_FUNCTION_CODE,
+                expected_returned_bytes.clone(),
+            )))))
+        });
+
+    let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+    let mut mock_labjack_client = LabjackClient {
+        context,
+        address: "127.0.0.1:502".parse().unwrap(),
+        command_response_timeout: Duration::from_secs(1),
+        labjack_kind: LabjackKind::T7,
+    };
+
+    let tags = [u64_tag.into(), u32_tag.into(), f32_tag.into()];
+    let result = mock_labjack_client.read_tags(&tags).await;
+
+    assert_eq!(
+        result.unwrap(),
+        vec![
+            HydratedTagValue::U64(0x123456789ABCDEF0),
+            HydratedTagValue::U32(0x11223344),
+            HydratedTagValue::F32(f32::from_be_bytes([0x55, 0x66, 0x77, 0x88]))
+        ]
+    );
 }
