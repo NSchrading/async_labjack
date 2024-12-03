@@ -1,4 +1,6 @@
 /target
+.github
 .cargo-ok
 .DS_Store
 src/ljm_constants/target
+Cargo.lock
