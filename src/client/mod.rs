@@ -564,11 +564,10 @@ impl LabjackInteractions for LabjackClient {
         )
         .await?;
 
-        let mut bytes_vec = Vec::new();
-        for tag in tags {
-            bytes_vec.extend((tag.address() as u32).to_be_bytes());
-        }
-        let data_bytes = Bytes::from(bytes_vec);
+        let data_bytes = Bytes::from_iter(
+            tags.iter()
+                .flat_map(|tag| (tag.address() as u32).to_be_bytes()),
+        );
 
         // write the addresses that should be streamed to STREAM_SCANLIST_ADDRESS<N>
         self.context

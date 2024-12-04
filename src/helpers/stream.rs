@@ -40,8 +40,8 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
 
         // todo: could check on the transaction id, making sure it's incrementing
 
-        let backlog_bytes = ((header_buf[10] as u16) << 8) + header_buf[11] as u16;
-        let status_code = ((header_buf[12] as u16) << 8) + header_buf[13] as u16;
+        let backlog_bytes = u16::from_be_bytes([header_buf[10], header_buf[11]]);
+        let status_code = u16::from_be_bytes([header_buf[12], header_buf[13]]);
         match status_code.try_into() {
             Ok(LabjackError::LjSuccess) => {}
             Ok(LabjackError::StreamAutoRecoverActive) => {
@@ -57,7 +57,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
             Ok(LabjackError::StreamAutoRecoverEnd) => {
                 #[cfg(debug_assertions)]
                 {
-                    let num_scans_skipped = ((header_buf[14] as u16) << 8) + header_buf[15] as u16;
+                    let num_scans_skipped = u16::from_be_bytes([header_buf[14], header_buf[15]]);
                     log::debug!(
                         "Auto recover mode has ended. The number of skipped scans = {}.",
                         num_scans_skipped,
@@ -73,7 +73,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
                 ));
             }
             Ok(LabjackError::StreamBurstComplete) => {
-                let num_samples_remaining = ((header_buf[14] as u16) << 8) + header_buf[15] as u16;
+                let num_samples_remaining = u16::from_be_bytes([header_buf[14], header_buf[15]]);
                 log::debug!(
                     "Burst stream mode ended successfully. Remaining samples to read: {}",
                     num_samples_remaining
@@ -118,7 +118,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
         // The 4th and 5th byte in the header indicate the length of the subsequent packet
         // but there are other bytes in the packet after length that are not data.
         // Subtract off the 10 remaining header bytes, the bytes left are all data.
-        let num_bytes = (((header_buf[4] as u16) << 8) + header_buf[5] as u16) - 10;
+        let num_bytes = u16::from_be_bytes([header_buf[4], header_buf[5]]) - 10;
         #[cfg(debug_assertions)]
         {
             log::debug!("num bytes to read in stream data: {:?}", num_bytes);

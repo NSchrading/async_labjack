@@ -288,7 +288,7 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
             total_bytes_to_read = total_bytes_to_read.saturating_sub(result.len() as u32);
             log::debug!("Still need to read {total_bytes_to_read} bytes");
 
-            data_bytes.extend(result);
+            data_bytes.extend_from_slice(&result);
         }
 
         // If we want a non-even number of bytes, we need to pop off the last byte because
@@ -585,10 +585,12 @@ pub struct StreamConfig {
     /// The automatic settling behavior varies by device. Ignored for T8.
     #[builder(default = 0.0)]
     pub settling_us: f32,
-    /// How accurately to sample when streaming
-    /// T8 valid values: 0-16. 0 will use the best resolution for the specified data rate.
-    /// T7: 0-8. Default value of 0 corresponds to an index of 1.
-    /// T4: 0-5. Default value of 0 corresponds to an index of 1.
+    /// How accurately to sample when streaming.
+    ///
+    /// Valid values:
+    /// - T8: 0-16. 0 will use the best resolution for the specified data rate.
+    /// - T7: 0-8. Default value of 0 corresponds to an index of 1.
+    /// - T4: 0-5. Default value of 0 corresponds to an index of 1.
     #[builder(default = 0)]
     pub resolution_index: u32,
     /// Size of the stream data buffer in bytes. A value of 0 equates to the default value.

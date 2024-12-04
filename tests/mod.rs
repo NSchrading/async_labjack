@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use bytes::BufMut;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use core::future;
 use core::future::Future;
 use mockall::mock;

@@ -26,20 +26,26 @@ async fn main() {
     println!("AIN2: {}", bytes_response.get_f32());
 
     println!("writing 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32");
-    let mut bytes_vec = 5.4321_f32.to_be_bytes().to_vec();
-    bytes_vec.extend((-314_i32).to_be_bytes());
     let mut mbfb = ModbusFeedbackFrame::new_write_frame(
         &[TEST_FLOAT32.address, TEST_INT32.address],
-        &[2, 2],
-        Bytes::from(bytes_vec),
+        &[2],
+        Bytes::from_iter(
+            [5.4321_f32.to_be_bytes(), (-314_i32).to_be_bytes()]
+                .into_iter()
+                .flatten(),
+        ),
     );
     client.write_mbfb(&mut mbfb).await.unwrap();
 
     let value = TEST_FLOAT32.read(&mut client).await.unwrap();
-    assert!(value == 5.4321);
+    assert!(
+        value == 5.4321,
+        "Expected value to be 5.4321 but was {}",
+        value
+    );
 
     let value = TEST_INT32.read(&mut client).await.unwrap();
-    assert!(value == -314);
+    assert!(value == -314, "Expected value to be -314 but was {}", value);
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
