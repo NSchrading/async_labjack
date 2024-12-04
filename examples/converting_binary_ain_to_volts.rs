@@ -17,6 +17,7 @@ use tokio_labjack_lib::client::LabjackClient;
 use tokio_labjack_lib::client::LabjackInteractions;
 use tokio_labjack_lib::helpers::calibrations::t7_ain_binary_to_volts;
 use tokio_labjack_lib::helpers::calibrations::Calibrations;
+use tokio_labjack_lib::helpers::calibrations::T7Calibrations;
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::HydratedTagValue;
 use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
@@ -40,10 +41,12 @@ async fn main() {
     AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
 
     // We need the calibration constants in order to convert the binary values to volts.
-    let t7_cal = match client.read_calibrations().await.unwrap() {
-        Calibrations::T7Calibrations(cal) => cal,
-        _ => panic!("Unexpected calibration!"),
-    };
+    let t7_cal: T7Calibrations = client
+        .read_calibrations()
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
     println!("Calibration constants: {t7_cal:?}");
 
     // First let's read both the 24-bit binary value and the converted value from the labjack
@@ -52,12 +55,8 @@ async fn main() {
         .await
         .unwrap();
 
-    let raw_24_bit_ain1_binary = match readings[0] {
-        HydratedTagValue::U32(val) => val,
-        _ => {
-            panic!("unexpected tag value: {:?}", readings[0])
-        }
-    };
+    let raw_24_bit_ain1_binary = (&readings[0]).try_into().unwrap();
+
     // If using a T7-pro, the default resolution index is 9 for command-response reads.
     // This makes use of the high-resolution 24-bit ADC, so we should use the high resolution (hr)
     // calibration constants.
@@ -65,12 +64,7 @@ async fn main() {
     // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
     let volt_value = t7_ain_binary_to_volts(raw_24_bit_ain1_binary, &t7_cal.hr_gain_1_ain_cal);
 
-    let ain_volt_converted_on_device = match readings[1] {
-        HydratedTagValue::F32(val) => val,
-        _ => {
-            panic!("unexpected tag value: {:?}", readings[1])
-        }
-    };
+    let ain_volt_converted_on_device: f32 = (&readings[1]).try_into().unwrap();
 
     println!("Raw 24-bit value: {raw_24_bit_ain1_binary:?}");
     println!("Our conversion: {volt_value:?}V, on device: {ain_volt_converted_on_device:?}V");

@@ -10,10 +10,15 @@ use std::pin::Pin;
 use tokio::time::Duration;
 use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions, LabjackKind};
 use tokio_labjack_lib::helpers::bit_manipulation::be_bytes_to_u16_array;
-use tokio_labjack_lib::labjack_tag::HydratedTagValue;
+use tokio_labjack_lib::labjack_tag::StreamConfig;
+use tokio_labjack_lib::labjack_tag::{Addressable, HydratedTagValue, ReadableLabjackTag};
 use tokio_labjack_lib::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
 use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use tokio_labjack_lib::modbus_feedback::MBFB_FUNCTION_CODE;
+use tokio_labjack_lib::{
+    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+    STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+};
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::slave::SlaveContext;
 use tokio_modbus::Slave;
@@ -388,4 +393,86 @@ async fn test_read_tags() {
             HydratedTagValue::F32(f32::from_be_bytes([0x55, 0x66, 0x77, 0x88]))
         ]
     );
+}
+
+#[tokio::test]
+async fn test_read_stream_config() {
+    let mut mock_client = MockModbusClient::new();
+
+    // Define the tags that read_stream_config will read
+    let tags_to_read: &[ReadableLabjackTag] = &[
+        STREAM_SCANRATE_HZ.into(),
+        STREAM_NUM_ADDRESSES.into(),
+        STREAM_SAMPLES_PER_PACKET.into(),
+        STREAM_SETTLING_US.into(),
+        STREAM_RESOLUTION_INDEX.into(),
+        STREAM_BUFFER_SIZE_BYTES.into(),
+        STREAM_AUTO_TARGET.into(),
+        STREAM_NUM_SCANS.into(),
+    ];
+
+    // Construct the expected MBFB frame using ModbusFeedbackFrame
+    let mut read_addresses = Vec::new();
+    let mut read_counts = Vec::new();
+    for tag in tags_to_read {
+        read_addresses.push(tag.address());
+        read_counts.push(tag.register_count());
+    }
+
+    let mut expected_mbfb = ModbusFeedbackFrame::new_read_frame(&read_addresses, &read_counts);
+    let expected_mbfb_bytes = expected_mbfb.to_bytes_mut();
+
+    // Define the mock response bytes
+    let mock_returned_bytes = Bytes::from(vec![
+        0x41, 0x40, 0x00, 0x00, // scan_rate: 12.0 (f32)
+        0x00, 0x00, 0x00, 0x02, // num_addresses: 2 (u32)
+        0x00, 0x00, 0x00, 0x0A, // samples_per_packet: 10 (u32)
+        0x41, 0x20, 0x00, 0x00, // settling_us: 10.0 (f32)
+        0x00, 0x00, 0x00, 0x03, // resolution_index: 3 (u32)
+        0x00, 0x00, 0x10, 0x00, // buffer_size_bytes: 4096 (u32)
+        0x00, 0x00, 0x00, 0x10, // auto_target: 16 (u32)
+        0x00, 0x00, 0x00, 0x05, // num_scans: 5 (u32)
+    ]);
+    let expected_returned_bytes = mock_returned_bytes.clone();
+
+    // custom bytes call
+    mock_client
+        .expect_call()
+        .withf(move |req| match req {
+            Request::Custom(function_code, bytes) => {
+                matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_mbfb_bytes)
+                    && function_code == &MBFB_FUNCTION_CODE
+            }
+            _ => false,
+        })
+        .returning(move |_| {
+            Box::pin(future::ready(Ok(Ok(Response::Custom(
+                MBFB_FUNCTION_CODE,
+                expected_returned_bytes.clone(),
+            )))))
+        });
+
+    let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+    let mut mock_labjack_client = LabjackClient {
+        context,
+        address: "127.0.0.1:502".parse().unwrap(),
+        command_response_timeout: Duration::from_secs(1),
+        labjack_kind: LabjackKind::T7,
+    };
+
+    let result = mock_labjack_client.read_stream_config().await;
+
+    // Assert the result
+    let expected_config = StreamConfig {
+        scan_rate: 12.0,
+        num_addresses: 2,
+        samples_per_packet: 10,
+        settling_us: 10.0,
+        resolution_index: 3,
+        buffer_size_bytes: 4096,
+        auto_target: 16,
+        num_scans: 5,
+    };
+
+    assert_eq!(result.unwrap(), expected_config);
 }

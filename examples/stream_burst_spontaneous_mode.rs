@@ -45,6 +45,11 @@ async fn main() {
         .await
         .unwrap();
 
+    // just as an example, you can read the stream config before or after you set it to
+    // confirm expectations.
+    let current_stream_config = client.read_stream_config().await.unwrap();
+    println!("Current stream config: {current_stream_config:?}");
+
     // As the data streams in, we need to parse it from the Modbus Feedback Spontaneous
     // Packet Protocol to the data bytes. We do this in a background async task.
     let (tx, mut rx) = mpsc::channel(1024);

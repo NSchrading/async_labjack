@@ -486,48 +486,16 @@ impl LabjackInteractions for LabjackClient {
             )));
         }
 
-        let scan_rate = match result[0] {
-            HydratedTagValue::F32(val) => val,
-            _ => panic!("scan_rate must be an F32"),
-        };
+        let scan_rate = (&result[0]).try_into()?;
+        let num_addresses = (&result[1]).try_into()?;
+        let samples_per_packet = (&result[2]).try_into()?;
+        let settling_us = (&result[3]).try_into()?;
+        let resolution_index = (&result[4]).try_into()?;
+        let buffer_size_bytes = (&result[5]).try_into()?;
+        let auto_target = (&result[6]).try_into()?;
+        let num_scans = (&result[7]).try_into()?;
 
-        let num_addresses = match result[1] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("num_addresses must be a U32"),
-        };
-
-        let samples_per_packet = match result[2] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("samples_per_packet must be a U32"),
-        };
-
-        let settling_us = match result[3] {
-            HydratedTagValue::F32(val) => val,
-            _ => panic!("settling_us must be an F32"),
-        };
-
-        let resolution_index = match result[4] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("resolution_index must be a U32"),
-        };
-
-        let buffer_size_bytes = match result[5] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("buffer_size_bytes must be a U32"),
-        };
-
-        let auto_target = match result[6] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("auto_target must be a U32"),
-        };
-
-        let num_scans = match result[7] {
-            HydratedTagValue::U32(val) => val,
-            _ => panic!("num_scans must be a U32"),
-        };
-
-        let mut config = StreamConfigBuilder::default();
-        config
+        let config = StreamConfigBuilder::default()
             .scan_rate(scan_rate)
             .num_addresses(num_addresses)
             .samples_per_packet(samples_per_packet)
@@ -535,15 +503,10 @@ impl LabjackInteractions for LabjackClient {
             .resolution_index(resolution_index)
             .buffer_size_bytes(buffer_size_bytes)
             .auto_target(auto_target)
-            .num_scans(num_scans);
-        let result = config.build();
-        match result {
-            Ok(val) => Ok(val),
-            Err(e) => Err(TokioLabjackError::Other(format!(
-                "Unable to build stream config: {}",
-                e
-            ))),
-        }
+            .num_scans(num_scans)
+            .build();
+        config
+            .map_err(|e| TokioLabjackError::Other(format!("Unable to build stream config: {}", e)))
     }
 
     async fn start_stream(

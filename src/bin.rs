@@ -11,6 +11,7 @@ use tokio::time::{sleep, Duration};
 use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions};
 use tokio_labjack_lib::helpers::calibrations::Calibrations;
 use tokio_labjack_lib::helpers::calibrations::T7AinCalibrationBuilder;
+use tokio_labjack_lib::helpers::calibrations::T7Calibrations;
 use tokio_labjack_lib::helpers::calibrations::{ain_binary_to_volts, T7AinCalibration};
 use tokio_labjack_lib::helpers::stream::process_stream;
 use tokio_labjack_lib::labjack_tag::{HydratedTagValue, StreamConfigBuilder};
@@ -37,13 +38,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .unwrap();
 
+    client.stop_stream().await.unwrap();
+
     println!("{:?}", client.labjack_kind);
 
     let bin = AIN1_BINARY.read(&mut client).await.unwrap();
-    let t7_cal = match client.read_calibrations().await.unwrap() {
-        Calibrations::T7Calibrations(cal) => cal,
-        _ => panic!("Unexpected calibration!"),
-    };
+    let t7_cal: T7Calibrations = client
+        .read_calibrations()
+        .await
+        .unwrap()
+        .try_into()
+        .unwrap();
     let val = ain_binary_to_volts(
         (bin >> 8) as u16,
         t7_cal.hr_gain_1_ain_cal.positive_slope,
@@ -105,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     ljc.disconnect().await;
     // }
 
-    SYSTEM_REBOOT.write(&mut client, 0x4C4A0000).await?;
+    //SYSTEM_REBOOT.write(&mut client, 0x4C4A0000).await?;
 
     println!("Disconnecting");
     client.disconnect().await?;

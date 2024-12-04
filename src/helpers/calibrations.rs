@@ -2,6 +2,7 @@
 //! See [Labjack documentation](https://support.labjack.com/docs/20-0-internal-flash-t-series-datasheet)
 //! for more info.
 
+use crate::{Result, TokioLabjackError};
 use derive_builder::Builder;
 
 /// The starting address of internal flash where the calibration constants reside.
@@ -26,6 +27,20 @@ impl From<T4Calibrations> for Calibrations {
 impl From<T7Calibrations> for Calibrations {
     fn from(cal: T7Calibrations) -> Self {
         Calibrations::T7Calibrations(cal)
+    }
+}
+
+impl TryInto<T7Calibrations> for Calibrations {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<T7Calibrations> {
+        match self {
+            Calibrations::T7Calibrations(cal) => Ok(cal),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected T7Calibrations, got {:?}",
+                self
+            ))),
+        }
     }
 }
 

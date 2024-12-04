@@ -45,36 +45,20 @@ async fn main() {
         .await
         .unwrap();
 
-    if let HydratedTagValue::F32(val) = results[0] {
-        assert!(val == 123.456)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let float32_val: f32 = (&results[0]).try_into().unwrap();
+    assert!(float32_val == 123.456);
 
-    if let HydratedTagValue::I32(val) = results[1] {
-        assert!(val == 123456)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let int32_val: i32 = (&results[1]).try_into().unwrap();
+    assert!(int32_val == 123456);
 
-    if let HydratedTagValue::U64(val) = results[2] {
-        // the mac address could be anything and it isn't writeable
-        println!("mac address: {val:?}");
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let ethernet_mac_val: u64 = (&results[2]).try_into().unwrap();
+    println!("mac address: {ethernet_mac_val:?}");
 
-    if let HydratedTagValue::U32(val) = results[3] {
-        assert!(val == 123456)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let uint32_val: u32 = (&results[3]).try_into().unwrap();
+    assert!(uint32_val == 123456);
 
-    if let HydratedTagValue::U16(val) = results[4] {
-        assert!(val == 12345)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let uint16_val: u16 = (&results[4]).try_into().unwrap();
+    assert!(uint16_val == 12345);
 
     // Read and write all at once. Writing occurs first so you can see the change from the reads.
     let results = client
@@ -101,29 +85,17 @@ async fn main() {
         .await
         .unwrap();
 
-    if let HydratedTagValue::F32(val) = results[0] {
-        assert!(val == -98765.43)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let float32_val: f32 = (&results[0]).try_into().unwrap();
+    assert!(float32_val == -98765.43);
 
-    if let HydratedTagValue::I32(val) = results[1] {
-        assert!(val == -987654)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let int32_val: i32 = (&results[1]).try_into().unwrap();
+    assert!(int32_val == -987654);
 
-    if let HydratedTagValue::U32(val) = results[2] {
-        assert!(val == 987654)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let uint32_val: u32 = (&results[2]).try_into().unwrap();
+    assert!(uint32_val == 987654);
 
-    if let HydratedTagValue::U16(val) = results[3] {
-        assert!(val == 9876)
-    } else {
-        panic!("Unexpected tag value")
-    };
+    let uint16_val: u16 = (&results[3]).try_into().unwrap();
+    assert!(uint16_val == 9876);
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();

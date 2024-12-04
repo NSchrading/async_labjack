@@ -5,6 +5,7 @@ use crate::client::LabjackInteractions;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::Result;
+use crate::TokioLabjackError;
 use bytes::{Buf, Bytes, BytesMut};
 use derive_builder::Builder;
 use enum_dispatch::enum_dispatch;
@@ -347,7 +348,7 @@ impl<R> LabjackTag<Bytes, R, CanWrite> {
 /// then either return the appropriate [`HydratedTagValue`] or write the appropriate values
 /// to the correct registers.
 #[enum_dispatch]
-pub(crate) trait Addressable {
+pub trait Addressable {
     /// Return the register count expected of the Addressable labjack tag.
     fn register_count(&self) -> u8;
 
@@ -357,7 +358,7 @@ pub(crate) trait Addressable {
 
 /// Any Readable labjack tag is capable of being read and turned into a HydratedTagValue.
 #[enum_dispatch]
-pub(crate) trait Readable: Addressable {
+pub trait Readable: Addressable {
     /// Take bytes and convert them into the type specified by the Readable labjack tag,
     /// returning a HydratedTagValue.
     fn hydrate(&self, bytes: &mut Bytes) -> HydratedTagValue;
@@ -452,6 +453,76 @@ pub enum HydratedTagValue {
     I32(i32),
     U32(u32),
     U16(u16),
+}
+
+impl TryInto<f32> for &HydratedTagValue {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<f32> {
+        match self {
+            &HydratedTagValue::F32(val) => Ok(val),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected F32, got {:?}",
+                self
+            ))),
+        }
+    }
+}
+
+impl TryInto<i32> for &HydratedTagValue {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<i32> {
+        match self {
+            &HydratedTagValue::I32(val) => Ok(val),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected I32, got {:?}",
+                self
+            ))),
+        }
+    }
+}
+
+impl TryInto<u64> for &HydratedTagValue {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<u64> {
+        match self {
+            &HydratedTagValue::U64(val) => Ok(val),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected U64, got {:?}",
+                self
+            ))),
+        }
+    }
+}
+
+impl TryInto<u32> for &HydratedTagValue {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<u32> {
+        match self {
+            &HydratedTagValue::U32(val) => Ok(val),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected U32, got {:?}",
+                self
+            ))),
+        }
+    }
+}
+
+impl TryInto<u16> for &HydratedTagValue {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<u16> {
+        match self {
+            &HydratedTagValue::U16(val) => Ok(val),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected U16, got {:?}",
+                self
+            ))),
+        }
+    }
 }
 
 /// An enum of all possible writable LabjackTags. This is used in the dynamic
