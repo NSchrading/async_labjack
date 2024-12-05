@@ -30,9 +30,11 @@ use tokio::time::{timeout, Duration};
 use tokio_modbus;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::{tcp, ExceptionCode, Request, Response, Writer};
+use tokio_modbus::slave::SlaveContext;
+use tokio_modbus::Slave;
 
 /// The kind of labjack this device is, based on the PRODUCT_ID register.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum LabjackKind {
     T4,
     T7,
@@ -75,6 +77,7 @@ pub struct LabjackClient {
     pub address: SocketAddr,
     pub command_response_timeout: Duration,
     pub labjack_kind: LabjackKind,
+    dropped: bool,
 }
 
 impl LabjackClient {
@@ -100,6 +103,7 @@ impl LabjackClient {
             address: socket_addr,
             command_response_timeout: Duration::from_secs(5),
             labjack_kind: LabjackKind::T7, // temporarily assign a kind defaulted to T7
+            dropped: false,
         };
 
         let actual_kind = labjack_client.get_labjack_kind().await?;
@@ -182,15 +186,80 @@ impl LabjackClient {
     }
 }
 
-// todo - unsure if I want this. It's probably fine to block the thread to perform the disconnect
-// but I need to bring in the futures crate just for this.
-// impl Drop for LabjackClient {
-//     fn drop(&mut self) {
-//         if let Err(e) = futures::executor::block_on(self.disconnect()) {
-//             tracing::error!("Unable to disconnect properly during client drop: {e}");
-//         }
-//     }
-// }
+/// A dummy client implementation for use in the Drop
+#[derive(Debug)]
+struct EmptyClient;
+
+/// A dummy client implementation for use in the Drop
+#[async_trait]
+impl Client for EmptyClient {
+    async fn call(&mut self, _: Request<'_>) -> tokio_modbus::Result<Response> {
+        unreachable!()
+    }
+
+    async fn disconnect(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// A dummy client implementation for use in the Drop
+impl SlaveContext for EmptyClient {
+    fn set_slave(&mut self, _: Slave) {
+        unreachable!()
+    }
+}
+
+impl Drop for LabjackClient {
+    #[tracing::instrument]
+    fn drop(&mut self) {
+        if !self.dropped {
+            // Move self.context out of the struct
+            // We need to do this so we can call disconnect, which is async,
+            // in an async task.
+            let context = std::mem::replace(
+                &mut self.context,
+                Context::from(Box::new(EmptyClient {}) as Box<dyn Client>),
+            );
+            let address = self.address;
+            let timeout = self.command_response_timeout;
+            let lj_kind = self.labjack_kind;
+
+            let join_handle = tokio::spawn(async move {
+                // Create a new client using the moved context
+                let mut client = LabjackClient {
+                    context,
+                    address,
+                    command_response_timeout: timeout,
+                    labjack_kind: lj_kind,
+                    dropped: true,
+                };
+                if let Err(e) = client.disconnect().await {
+                    tracing::error!("Unable to disconnect properly during client drop: {e}");
+                } else {
+                    tracing::info!("disconnect completed");
+                }
+            });
+
+            tokio::task::spawn_blocking(move || {
+                // Try to await the join handle
+                match tokio::runtime::Handle::current().block_on(join_handle) {
+                    Ok(_) => {
+                        tracing::info!("Drop completed");
+                    }
+                    Err(e) => {
+                        // If e is cancelled it's probably because the disconnect took
+                        // too long at the end of the program, there's not really anything
+                        // we can do, and it's probably fine so no need to log in that case.
+                        if !e.is_cancelled() {
+                            tracing::error!("Error awaiting disconnect task: {}", e);
+                        }
+                        tracing::error!("{}", e);
+                    }
+                }
+            });
+        }
+    }
+}
 
 /// An extra trait for the tokio_modbus Client, allowing for reads and writes of higher
 /// level [`ModbusFeedbackFrame`]s or [`ReadableLabjackTag`]s / [`WritableLabjackTag`]s.
@@ -388,6 +457,7 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 
 #[async_trait]
 impl LabjackInteractions for LabjackClient {
+    #[tracing::instrument(name = "Calling MBFB")]
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
         match self
             .context
