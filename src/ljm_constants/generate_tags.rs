@@ -163,6 +163,8 @@ pub enum TokioLabjackError {
     TimeElapsed(#[from] tokio::time::error::Elapsed),
     #[error(transparent)]
     Utf8Error(#[from] std::str::Utf8Error),
+    #[error(transparent)]
+    ProcessStreamSendError(#[from] tokio::sync::mpsc::error::SendError<u16>),
     #[error("{0}")]
     Other(String),
 }

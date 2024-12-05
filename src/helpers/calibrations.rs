@@ -47,7 +47,7 @@ impl TryInto<T7Calibrations> for Calibrations {
 /// Calibration constants for T4 high voltage analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for +/- 10V HV range AIN0.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T4AinHVCalibration {
     #[builder(default = 0.0003235316)]
     pub slope: f32,
@@ -58,7 +58,7 @@ pub struct T4AinHVCalibration {
 /// Calibration constants for T4 low voltage analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for 0-2.5V LV range AIN0.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T4AinLVCalibration {
     #[builder(default = 0.00003826692)]
     pub slope: f32,
@@ -69,7 +69,7 @@ pub struct T4AinLVCalibration {
 /// Calibration constants for T4 SpecV.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibration.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T4SpecVCalibration {
     #[builder(default = -0.0000383942)]
     pub slope: f32,
@@ -80,7 +80,7 @@ pub struct T4SpecVCalibration {
 /// Calibration constants for T4 DAC conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for DAC0.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T4DacCalibration {
     #[builder(default = 13107.68)]
     pub slope: f32,
@@ -118,7 +118,7 @@ pub struct T4Calibrations {
 /// Calibration constants for T7 analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for the +/- 10V range.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T7AinCalibration {
     #[builder(default = 33523.0)]
     pub binary_center: f32,
@@ -133,7 +133,7 @@ pub struct T7AinCalibration {
 /// Calibration constants for T7 DAC conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct T7DacCalibration {
     #[builder(default = 13200.0)]
     pub slope: f32,
@@ -144,7 +144,7 @@ pub struct T7DacCalibration {
 /// Calibration constants for T7 temperature conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-1-t7-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations.
-#[derive(Builder, Debug, PartialEq, Clone)]
+#[derive(Builder, Debug, PartialEq, Clone, Copy)]
 pub struct TemperatureCalibration {
     #[builder(default = -92.6)]
     pub slope: f32,

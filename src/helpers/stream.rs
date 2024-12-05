@@ -92,10 +92,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
                     .chunks_exact(2)
                     .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
                 {
-                    if let Err(e) = tx.send(data_byte).await {
-                        // todo: return more specific error here
-                        return Err(TokioLabjackError::Other(format!("{e:?}")));
-                    }
+                    tx.send(data_byte).await?;
                 }
                 return Ok(());
             }
@@ -136,10 +133,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
             .chunks_exact(2)
             .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
         {
-            if let Err(e) = tx.send(data_byte).await {
-                // todo: return more specific error here
-                return Err(TokioLabjackError::Other(format!("{e:?}")));
-            }
+            tx.send(data_byte).await?;
         }
     }
 }
