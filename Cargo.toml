@@ -16,7 +16,12 @@ bytes = "*"
 derive_builder = "*"
 enum_dispatch = "*"
 thiserror = "*"
-tokio = { version = "1.4", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.4", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "signal",
+] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
 tracing = { version = "*", features = ["log"] }
 

@@ -210,8 +210,17 @@ impl SlaveContext for EmptyClient {
 }
 
 impl Drop for LabjackClient {
+    /// On drop, attempt to disconnect from the labjack and stop any running streams.
+    /// Note: due to limitations in the tokio runtime, there is no way to ensure that
+    /// the async disconnect call will run to completion if this is being called when
+    /// main is ending. Therefore, to gracefully cleanup on program end you should not rely
+    /// on this to always cleanup properly. Instead, before main ends,
+    /// call disconnect() yourself, making sure to handle signals that may abruptly end the program
+    /// before cleanup can occur.
     #[tracing::instrument]
     fn drop(&mut self) {
+        // dropped guard ensures that we don't recursively try to drop LabjackClient
+        // since we're going to construct one in the async task here.
         if !self.dropped {
             // Move self.context out of the struct
             // We need to do this so we can call disconnect, which is async,
@@ -224,37 +233,19 @@ impl Drop for LabjackClient {
             let timeout = self.command_response_timeout;
             let lj_kind = self.labjack_kind;
 
-            let join_handle = tokio::spawn(async move {
-                // Create a new client using the moved context
-                let mut client = LabjackClient {
-                    context,
-                    address,
-                    command_response_timeout: timeout,
-                    labjack_kind: lj_kind,
-                    dropped: true,
-                };
+            let mut client = LabjackClient {
+                context,
+                address,
+                command_response_timeout: timeout,
+                labjack_kind: lj_kind,
+                dropped: true,
+            };
+
+            tokio::spawn(async move {
                 if let Err(e) = client.disconnect().await {
                     tracing::error!("Unable to disconnect properly during client drop: {e}");
                 } else {
-                    tracing::info!("disconnect completed");
-                }
-            });
-
-            tokio::task::spawn_blocking(move || {
-                // Try to await the join handle
-                match tokio::runtime::Handle::current().block_on(join_handle) {
-                    Ok(_) => {
-                        tracing::info!("Drop completed");
-                    }
-                    Err(e) => {
-                        // If e is cancelled it's probably because the disconnect took
-                        // too long at the end of the program, there's not really anything
-                        // we can do, and it's probably fine so no need to log in that case.
-                        if !e.is_cancelled() {
-                            tracing::error!("Error awaiting disconnect task: {}", e);
-                        }
-                        tracing::error!("{}", e);
-                    }
+                    tracing::debug!("Disconnect completed successfully from drop.");
                 }
             });
         }
@@ -459,6 +450,7 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 impl LabjackInteractions for LabjackClient {
     #[tracing::instrument(name = "Calling MBFB")]
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
+        // todo these fns need timeouts
         match self
             .context
             .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
@@ -1037,5 +1029,492 @@ impl LabjackInteractions for LabjackClient {
         } else {
             TokioLabjackError::from(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::helpers::bit_manipulation::be_bytes_to_u16_array;
+    use crate::labjack_tag::StreamConfig;
+    use crate::labjack_tag::{Addressable, HydratedTagValue, ReadableLabjackTag};
+    use crate::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
+    use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
+    use crate::modbus_feedback::MBFB_FUNCTION_CODE;
+    use crate::{
+        STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
+        STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    };
+    use async_trait::async_trait;
+    use bytes::Bytes;
+    use core::future;
+    use core::future::Future;
+    use mockall::mock;
+    use std::borrow::Cow;
+    use std::io;
+    use std::pin::Pin;
+    use tokio::time::Duration;
+    use tokio_modbus::client::{Client, Context};
+    use tokio_modbus::slave::SlaveContext;
+    use tokio_modbus::Slave;
+    use tokio_modbus::{Request, Response, Result};
+
+    mock! {
+        #[derive(Debug)]
+        pub ModbusClient {}
+
+        // We have to define the lifetimes specifically due to mockall limitations
+        // See https://github.com/asomers/mockall/issues/541#issuecomment-1870690737
+        #[async_trait]
+        impl Client for ModbusClient {
+            fn call<'life0, 'life1, 'async_trait>(
+                &'life0 mut self,
+                request: Request<'life1>,
+            ) -> Pin<
+                    Box<dyn Future<Output = Result<Response>> + Send + 'async_trait>
+                >
+            where
+                'life0: 'async_trait,
+                'life1: 'async_trait,
+                Self: 'async_trait,
+            {}
+
+            async fn disconnect(&mut self) -> io::Result<()>;
+        }
+        impl SlaveContext for ModbusClient {
+            fn set_slave(&mut self, slave: Slave);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_labjack_tag_read() {
+        let mut mock_client = MockModbusClient::new();
+
+        // Define the mock behavior for call
+        mock_client
+            .expect_call()
+            // 4 register call
+            .withf(|req| matches!(req, Request::ReadInputRegisters(0, 4)))
+            .returning(|_| {
+                Box::pin(future::ready(Ok(Ok(Response::ReadInputRegisters(vec![
+                    0x1234, 0x5678, 0x9ABC, 0xDEF0,
+                ])))))
+            });
+        mock_client
+            .expect_call()
+            // 2 register call
+            .withf(|req| matches!(req, Request::ReadInputRegisters(0, 2)))
+            .returning(|_| {
+                Box::pin(future::ready(Ok(Ok(Response::ReadInputRegisters(vec![
+                    0x1234, 0x5678,
+                ])))))
+            });
+        mock_client
+            .expect_call()
+            // 1 register call
+            .withf(|req| matches!(req, Request::ReadInputRegisters(0, 1)))
+            .returning(|_| {
+                Box::pin(future::ready(Ok(Ok(Response::ReadInputRegisters(vec![
+                    0x1234,
+                ])))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: false,
+        };
+
+        let u64_tag: LabjackTag<u64, CanRead, CannotWrite> = LabjackTag::new(0);
+        let u32_tag: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(0);
+        let f32_tag: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
+        let i32_tag: LabjackTag<i32, CanRead, CannotWrite> = LabjackTag::new(0);
+        let u16_tag: LabjackTag<u16, CanRead, CannotWrite> = LabjackTag::new(0);
+
+        let result = u64_tag.read(&mut mock_labjack_client).await;
+        assert_eq!(result.unwrap(), 0x123456789ABCDEF0);
+
+        let result = u32_tag.read(&mut mock_labjack_client).await;
+        assert_eq!(result.unwrap(), 0x12345678);
+
+        let result = f32_tag.read(&mut mock_labjack_client).await;
+        assert_eq!(
+            result.unwrap(),
+            f32::from_be_bytes([0x12, 0x34, 0x56, 0x78])
+        );
+
+        let result = i32_tag.read(&mut mock_labjack_client).await;
+        assert_eq!(result.unwrap(), 0x12345678);
+
+        let result = u16_tag.read(&mut mock_labjack_client).await;
+        assert_eq!(result.unwrap(), 0x1234);
+    }
+
+    #[tokio::test]
+    async fn test_labjack_tag_write() {
+        let mut mock_client = MockModbusClient::new();
+
+        // There are no writeable u64s
+
+        let u32_tag: LabjackTag<u32, CanRead, CanWrite> = LabjackTag::new(1000);
+        let test_u32_value = u32::MAX;
+        let expected_u32_data = be_bytes_to_u16_array(test_u32_value.to_be_bytes());
+        let expected_u32_num_registers = expected_u32_data.len() as u16;
+
+        let f32_tag: LabjackTag<f32, CanRead, CanWrite> = LabjackTag::new(100);
+        let test_f32_value: f32 = 123.45;
+        let expected_f32_data = be_bytes_to_u16_array(test_f32_value.to_be_bytes());
+        let expected_f32_num_registers = expected_f32_data.len() as u16;
+
+        let i32_tag: LabjackTag<i32, CanRead, CanWrite> = LabjackTag::new(10);
+        let test_i32_value = i32::MIN;
+        let expected_i32_data = be_bytes_to_u16_array(test_i32_value.to_be_bytes());
+        let expected_i32_num_registers = expected_i32_data.len() as u16;
+
+        let u16_tag: LabjackTag<u16, CanRead, CanWrite> = LabjackTag::new(1);
+        let test_u16_value = u16::MAX;
+
+        // u32 call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::WriteMultipleRegisters(addr, data) => {
+                    matches!(data, Cow::Borrowed(slice) if slice == &expected_u32_data)
+                        && addr == &u32_tag.address
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::WriteMultipleRegisters(
+                    u32_tag.address,
+                    expected_u32_num_registers,
+                )))))
+            });
+
+        // f32 call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::WriteMultipleRegisters(addr, data) => {
+                    matches!(data, Cow::Borrowed(slice) if slice == &expected_f32_data)
+                        && addr == &f32_tag.address
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::WriteMultipleRegisters(
+                    f32_tag.address,
+                    expected_f32_num_registers,
+                )))))
+            });
+
+        // i32 call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::WriteMultipleRegisters(addr, data) => {
+                    matches!(data, Cow::Borrowed(slice) if slice == &expected_i32_data)
+                        && addr == &i32_tag.address
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::WriteMultipleRegisters(
+                    i32_tag.address,
+                    expected_i32_num_registers,
+                )))))
+            });
+
+        // u16 call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::WriteSingleRegister(addr, data) => {
+                    addr == &u16_tag.address && data == &test_u16_value
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::WriteSingleRegister(
+                    u16_tag.address,
+                    test_u16_value,
+                )))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: true,
+        };
+
+        let result = u32_tag
+            .write(&mut mock_labjack_client, test_u32_value)
+            .await;
+        assert!(result.is_ok());
+
+        let result = f32_tag
+            .write(&mut mock_labjack_client, test_f32_value)
+            .await;
+        assert!(result.is_ok());
+
+        let result = i32_tag
+            .write(&mut mock_labjack_client, test_i32_value)
+            .await;
+        assert!(result.is_ok());
+
+        let result = u16_tag
+            .write(&mut mock_labjack_client, test_u16_value)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_read_write_frame_bytes() {
+        let mut mock_client = MockModbusClient::new();
+
+        let read_address = 0;
+        let write_address = 1;
+        let read_counts = 10;
+        let write_counts = 2;
+        let read_address_ref = &[read_address];
+        let write_address_ref = &[write_address];
+        let read_counts_ref = &[read_counts];
+        let write_counts_ref = &[write_counts];
+
+        let mut mbfb = ModbusFeedbackFrame::new(
+            read_address_ref,
+            write_address_ref,
+            read_counts_ref,
+            write_counts_ref,
+            Bytes::from(vec![0xAB, 0xCD, 0xEF, 0xFE]),
+        );
+        let mbfb_bytes = mbfb.to_bytes_mut().unwrap();
+        let expected_bytes = mbfb_bytes.clone();
+
+        let mock_returned_bytes = Bytes::from(vec![0x01, 0x10]);
+        let expected_returned_bytes = mock_returned_bytes.clone();
+
+        // custom bytes call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::Custom(function_code, bytes) => {
+                    matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_bytes)
+                        && function_code == &MBFB_FUNCTION_CODE
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::Custom(
+                    MBFB_FUNCTION_CODE,
+                    expected_returned_bytes.clone(),
+                )))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: true,
+        };
+        let result = mock_labjack_client.read_write_frame_bytes(mbfb_bytes).await;
+        assert_eq!(result.unwrap(), mock_returned_bytes.clone());
+    }
+
+    #[tokio::test]
+    async fn test_read_mbfb() {
+        let mut mock_client = MockModbusClient::new();
+
+        let read_address = 0;
+        let read_counts = 10;
+        let read_address_ref = &[read_address];
+        let read_counts_ref = &[read_counts];
+
+        let mut mbfb = ModbusFeedbackFrame::new_read_frame(read_address_ref, read_counts_ref);
+        let mbfb_bytes = mbfb.to_bytes_mut().unwrap();
+        let expected_bytes = mbfb_bytes.clone();
+
+        let mock_returned_bytes = Bytes::from(vec![0x01, 0x10]);
+        let expected_returned_bytes = mock_returned_bytes.clone();
+
+        // custom bytes call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::Custom(function_code, bytes) => {
+                    matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_bytes)
+                        && function_code == &MBFB_FUNCTION_CODE
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::Custom(
+                    MBFB_FUNCTION_CODE,
+                    expected_returned_bytes.clone(),
+                )))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: true,
+        };
+
+        let result = mock_labjack_client.read_mbfb(&mut mbfb).await;
+        assert_eq!(result.unwrap(), mock_returned_bytes.clone());
+    }
+
+    #[tokio::test]
+    async fn test_read_tags() {
+        let mut mock_client = MockModbusClient::new();
+
+        let u64_tag_address = 0;
+        let u32_tag_address = 1004;
+        let f32_tag_address = 4242;
+
+        let u64_tag: LabjackTag<u64, CanRead, CannotWrite> = LabjackTag::new(u64_tag_address);
+        let u32_tag: LabjackTag<u32, CanRead, CannotWrite> = LabjackTag::new(u32_tag_address);
+        let f32_tag: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(f32_tag_address);
+
+        let address_ref = &[u64_tag_address, u32_tag_address, f32_tag_address];
+
+        let mut mbfb = ModbusFeedbackFrame::new_read_frame(address_ref, &[4, 2, 2]);
+        let expected_mbfb_bytes = mbfb.to_bytes_mut().unwrap();
+
+        let expected_returned_bytes = Bytes::from(vec![
+            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0x77, 0x88,
+        ]);
+
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::Custom(function_code, bytes) => {
+                    matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_mbfb_bytes)
+                        && function_code == &MBFB_FUNCTION_CODE
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::Custom(
+                    MBFB_FUNCTION_CODE,
+                    expected_returned_bytes.clone(),
+                )))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: true,
+        };
+
+        let tags = [u64_tag.into(), u32_tag.into(), f32_tag.into()];
+        let result = mock_labjack_client.read_tags(&tags).await;
+
+        assert_eq!(
+            result.unwrap(),
+            vec![
+                HydratedTagValue::U64(0x123456789ABCDEF0),
+                HydratedTagValue::U32(0x11223344),
+                HydratedTagValue::F32(f32::from_be_bytes([0x55, 0x66, 0x77, 0x88]))
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_stream_config() {
+        let mut mock_client = MockModbusClient::new();
+
+        // Define the tags that read_stream_config will read
+        let tags_to_read: &[ReadableLabjackTag] = &[
+            STREAM_SCANRATE_HZ.into(),
+            STREAM_NUM_ADDRESSES.into(),
+            STREAM_SAMPLES_PER_PACKET.into(),
+            STREAM_SETTLING_US.into(),
+            STREAM_RESOLUTION_INDEX.into(),
+            STREAM_BUFFER_SIZE_BYTES.into(),
+            STREAM_AUTO_TARGET.into(),
+            STREAM_NUM_SCANS.into(),
+        ];
+
+        // Construct the expected MBFB frame using ModbusFeedbackFrame
+        let mut read_addresses = Vec::new();
+        let mut read_counts = Vec::new();
+        for tag in tags_to_read {
+            read_addresses.push(tag.address());
+            read_counts.push(tag.register_count());
+        }
+
+        let mut expected_mbfb = ModbusFeedbackFrame::new_read_frame(&read_addresses, &read_counts);
+        let expected_mbfb_bytes = expected_mbfb.to_bytes_mut().unwrap();
+
+        // Define the mock response bytes
+        let mock_returned_bytes = Bytes::from(vec![
+            0x41, 0x40, 0x00, 0x00, // scan_rate: 12.0 (f32)
+            0x00, 0x00, 0x00, 0x02, // num_addresses: 2 (u32)
+            0x00, 0x00, 0x00, 0x0A, // samples_per_packet: 10 (u32)
+            0x41, 0x20, 0x00, 0x00, // settling_us: 10.0 (f32)
+            0x00, 0x00, 0x00, 0x03, // resolution_index: 3 (u32)
+            0x00, 0x00, 0x10, 0x00, // buffer_size_bytes: 4096 (u32)
+            0x00, 0x00, 0x00, 0x10, // auto_target: 16 (u32)
+            0x00, 0x00, 0x00, 0x05, // num_scans: 5 (u32)
+        ]);
+        let expected_returned_bytes = mock_returned_bytes.clone();
+
+        // custom bytes call
+        mock_client
+            .expect_call()
+            .withf(move |req| match req {
+                Request::Custom(function_code, bytes) => {
+                    matches!(bytes, Cow::Borrowed(bytes) if bytes == &expected_mbfb_bytes)
+                        && function_code == &MBFB_FUNCTION_CODE
+                }
+                _ => false,
+            })
+            .returning(move |_| {
+                Box::pin(future::ready(Ok(Ok(Response::Custom(
+                    MBFB_FUNCTION_CODE,
+                    expected_returned_bytes.clone(),
+                )))))
+            });
+
+        let context = Context::from(Box::new(mock_client) as Box<dyn Client>);
+        let mut mock_labjack_client = LabjackClient {
+            context,
+            address: "127.0.0.1:502".parse().unwrap(),
+            command_response_timeout: Duration::from_secs(1),
+            labjack_kind: LabjackKind::T7,
+            dropped: true,
+        };
+
+        let result = mock_labjack_client.read_stream_config().await;
+
+        // Assert the result
+        let expected_config = StreamConfig {
+            scan_rate: 12.0,
+            num_addresses: 2,
+            samples_per_packet: 10,
+            settling_us: 10.0,
+            resolution_index: 3,
+            buffer_size_bytes: 4096,
+            auto_target: 16,
+            num_scans: 5,
+        };
+
+        assert_eq!(result.unwrap(), expected_config);
     }
 }

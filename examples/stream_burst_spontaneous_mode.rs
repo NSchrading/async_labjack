@@ -1,4 +1,5 @@
 use tokio::net::TcpStream;
+use tokio::signal;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
 use tokio_labjack::client::LabjackClient;
@@ -57,7 +58,7 @@ async fn main() {
     // As the data streams in, we need to parse it from the Modbus Feedback Spontaneous
     // Packet Protocol to the data bytes. We do this in a background async task.
     let (tx, mut rx) = mpsc::channel(1024);
-    tokio::spawn(async move {
+    let stream_processing_task = tokio::spawn(async move {
         if let Err(e) = process_stream(stream, tx).await {
             println!("Stream processing ended in failure: {e}");
         } else {
@@ -65,23 +66,42 @@ async fn main() {
         }
     });
 
-    // process_stream will put the raw u16 stream values in the Receiver
-    let mut idx_0 = true;
-    let mut total_count = 0;
-    while let Some(value) = rx.recv().await {
-        // Process the received values
-        if idx_0 {
-            assert_eq!(value, 0);
-        } else {
-            assert_eq!(value, 1);
+    let receive_task = tokio::spawn(async move {
+        // process_stream will put the raw u16 stream values in the Receiver
+        let mut idx_0 = true;
+        let mut total_count = 0;
+        while let Some(value) = rx.recv().await {
+            // Process the received values
+            if idx_0 {
+                assert_eq!(value, 0);
+            } else {
+                assert_eq!(value, 1);
+            }
+            idx_0 = !idx_0;
+            total_count += 1;
         }
-        idx_0 = !idx_0;
-        total_count += 1;
+        total_count
+    });
+
+    let joined_tasks = tokio::spawn(async move {
+        let (processing_result, receiver_result) =
+            tokio::join!(stream_processing_task, receive_task);
+        // check the processing task didn't break
+        processing_result.unwrap();
+        let total_count = receiver_result.unwrap();
+        assert_eq!(total_count, TOTAL_SAMPLES_EXPECTED);
+        println!("All values from the stream were consumed and as expected.");
+    });
+
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            println!("Captured ctrl+c, ending program gracefully.");
+        },
+        _ = joined_tasks => {
+            println!("Success!");
+        },
     }
 
-    assert_eq!(total_count, TOTAL_SAMPLES_EXPECTED);
-    println!("All values from the stream were consumed and as expected.");
-
-    println!("Success! Disconnecting...");
+    println!("Disconnecting...");
     client.disconnect().await.unwrap();
 }
