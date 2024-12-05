@@ -26,7 +26,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
         }
         #[cfg(debug_assertions)]
         {
-            log::debug!("stream header: {:?}", header_buf);
+            tracing::debug!("stream header: {:?}", header_buf);
         }
         let function_code = header_buf[7];
 
@@ -47,7 +47,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
             Ok(LabjackError::StreamAutoRecoverActive) => {
                 #[cfg(debug_assertions)]
                 {
-                    log::debug!(
+                    tracing::debug!(
                         "Stream buffer overload occured. In auto recovery mode, but continuing scan. 
                         Number of backlog bytes = {}",
                         backlog_bytes,
@@ -58,7 +58,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
                 #[cfg(debug_assertions)]
                 {
                     let num_scans_skipped = u16::from_be_bytes([header_buf[14], header_buf[15]]);
-                    log::debug!(
+                    tracing::debug!(
                         "Auto recover mode has ended. The number of skipped scans = {}.",
                         num_scans_skipped,
                     );
@@ -74,7 +74,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
             }
             Ok(LabjackError::StreamBurstComplete) => {
                 let num_samples_remaining = u16::from_be_bytes([header_buf[14], header_buf[15]]);
-                log::debug!(
+                tracing::debug!(
                     "Burst stream mode ended successfully. Remaining samples to read: {}",
                     num_samples_remaining
                 );
@@ -105,7 +105,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
             // If we get a different status_code that is parseable into a LabjackError,
             // this is an unexpected error. We only expect to get the STREAM_* status codes here
             Ok(_) => {
-                log::debug!(
+                tracing::debug!(
                     "Received unexpected status code from stream: {}",
                     status_code
                 );
@@ -121,7 +121,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
         let num_bytes = u16::from_be_bytes([header_buf[4], header_buf[5]]) - 10;
         #[cfg(debug_assertions)]
         {
-            log::debug!("num bytes to read in stream data: {:?}", num_bytes);
+            tracing::debug!("num bytes to read in stream data: {:?}", num_bytes);
         }
         let mut data_buf = vec![0; num_bytes as usize];
 

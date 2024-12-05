@@ -1,5 +1,5 @@
-//! Additional traits for the tokio modbus Client / Context for reading and writing LabjackTags or
-//! ModbusFeedbackFrames.
+//! The client used to interact with labjacks for reading and writing [`crate::labjack_tag::LabjackTag<T, R, W>`]s or
+//! [`ModbusFeedbackFrame`]s.
 use crate::helpers::bit_manipulation::u8_to_u16_vec;
 use crate::helpers::calibrations::{
     Calibrations, T4AinHVCalibrationBuilder, T4AinLVCalibrationBuilder, T4Calibrations,
@@ -8,33 +8,28 @@ use crate::helpers::calibrations::{
     TemperatureCalibrationBuilder, CAL_CONST_STARTING_ADDRESS,
 };
 use crate::labjack_tag::{
-    Addressable, HydratedTagValue, Readable, ReadableLabjackTag, WritableLabjackTag,
+    Addressable, HydratedTagValue, Readable, ReadableLabjackTag, StreamConfig, StreamConfigBuilder,
+    WritableLabjackTag,
 };
-use crate::labjack_tag::{StreamConfig, StreamConfigBuilder};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::modbus_feedback::MBFB_FUNCTION_CODE;
 use crate::{
-    LabjackError, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER, LAST_ERR_DETAIL, PRODUCT_ID,
-    STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE, STREAM_DATA_CR, STREAM_ENABLE,
-    STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET,
-    STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
+    LabjackError, Result, TokioLabjackError, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
+    LAST_ERR_DETAIL, PRODUCT_ID, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
+    STREAM_DATA_CR, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX,
+    STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
-use crate::{Result, TokioLabjackError};
 use async_trait::async_trait;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::borrow::Cow;
-use std::cmp;
-use std::io;
 use std::iter::zip;
 use std::net::SocketAddr;
+use std::{cmp, io};
 use tokio::net::TcpSocket;
-use tokio::time::timeout;
-use tokio::time::Duration;
+use tokio::time::{timeout, Duration};
 use tokio_modbus;
 use tokio_modbus::client::{Client, Context};
-use tokio_modbus::prelude::tcp;
-use tokio_modbus::prelude::Writer;
-use tokio_modbus::prelude::{ExceptionCode, Request, Response};
+use tokio_modbus::prelude::{tcp, ExceptionCode, Request, Response, Writer};
 
 /// The kind of labjack this device is, based on the PRODUCT_ID register.
 #[derive(Debug)]
@@ -60,9 +55,9 @@ pub enum LabjackKind {
 /// # Examples
 ///
 /// ```no_run
-/// use tokio_labjack_lib::client::LabjackClient;
+/// use tokio_labjack::client::LabjackClient;
 /// use tokio::time::Duration;
-/// use tokio_labjack_lib::AIN0;
+/// use tokio_labjack::AIN0;
 ///
 /// #[tokio::main()]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -83,24 +78,13 @@ pub struct LabjackClient {
 }
 
 impl LabjackClient {
-    /// Connect to the labjack at address socket_addr. If the labjack is not connectable,
-    /// this function may hang until the socket is finally closed. If you want a timeout,
-    /// on the connection attempt, use [`LabjackClient::connect_with_timeout`].
-    pub async fn connect(socket_addr: SocketAddr) -> Result<Self> {
-        let address = socket_addr;
-
-        // todo: since we're constructing the socket and then connecting, we could add
-        // socket configuration
-        let socket = match TcpSocket::new_v4() {
-            Ok(res) => res,
-            // converting the io error to our TokioLabjackError
-            Err(e) => {
-                return Err(TokioLabjackError::TokioModbusError(
-                    tokio_modbus::Error::Transport(e),
-                ));
-            }
-        };
-        let transport = match socket.connect(address).await {
+    /// Connect to the labjack at address socket_addr with the provided socket. Allows for
+    /// user customized socket options like SO_RCVBUF since this takes an existing socket.
+    /// If the labjack is not connectable, this function may hang until the socket is finally
+    /// closed. If you want a timeout, on the connection attempt, use
+    /// [`LabjackClient::connect_socket_with_timeout`].
+    pub async fn connect_socket(socket: TcpSocket, socket_addr: SocketAddr) -> Result<Self> {
+        let transport = match socket.connect(socket_addr).await {
             Ok(res) => res,
             // converting the io error to our TokioLabjackError
             Err(e) => {
@@ -113,7 +97,7 @@ impl LabjackClient {
 
         let mut labjack_client = LabjackClient {
             context,
-            address,
+            address: socket_addr,
             command_response_timeout: Duration::from_secs(5),
             labjack_kind: LabjackKind::T7, // temporarily assign a kind defaulted to T7
         };
@@ -122,6 +106,35 @@ impl LabjackClient {
         labjack_client.labjack_kind = actual_kind;
 
         Ok(labjack_client)
+    }
+
+    /// Connect to the labjack at address socket_addr with the provided socket, waiting for the
+    /// `timeout_duration` to connect. If unable to connect within `timeout_duration`, then
+    /// returns an error. Allows for user customized socket options like SO_RCVBUF since
+    /// this takes an existing socket.
+    pub async fn connect_socket_with_timeout(
+        socket: TcpSocket,
+        socket_addr: SocketAddr,
+        timeout_duration: Duration,
+    ) -> Result<Self> {
+        timeout(timeout_duration, Self::connect_socket(socket, socket_addr)).await?
+    }
+
+    /// Connect to the labjack at address socket_addr. If the labjack is not connectable,
+    /// this function may hang until the socket is finally closed. If you want a timeout,
+    /// on the connection attempt, use [`LabjackClient::connect_with_timeout`].
+    pub async fn connect(socket_addr: SocketAddr) -> Result<Self> {
+        let socket = match TcpSocket::new_v4() {
+            Ok(res) => res,
+            // converting the io error to our TokioLabjackError
+            Err(e) => {
+                return Err(TokioLabjackError::TokioModbusError(
+                    tokio_modbus::Error::Transport(e),
+                ));
+            }
+        };
+
+        Self::connect_socket(socket, socket_addr).await
     }
 
     /// Connect to the labjack at address `socket_addr`, waiting for the `timeout_duration` to
@@ -147,7 +160,7 @@ impl LabjackClient {
                 _ => {
                     // Nothing to do but note the error and attempt disconnect. User will
                     // have to try stopping stream via powercycle or command.
-                    log::error!("Unable to stop stream before disconnect: {e}");
+                    tracing::error!("Unable to stop stream before disconnect: {e}");
                 }
             }
         }
@@ -174,7 +187,7 @@ impl LabjackClient {
 // impl Drop for LabjackClient {
 //     fn drop(&mut self) {
 //         if let Err(e) = futures::executor::block_on(self.disconnect()) {
-//             log::error!("Unable to disconnect properly during client drop: {e}");
+//             tracing::error!("Unable to disconnect properly during client drop: {e}");
 //         }
 //     }
 // }
@@ -415,7 +428,7 @@ impl LabjackInteractions for LabjackClient {
             ));
         }
 
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut()?;
         self.read_write_frame_bytes(bytes).await
     }
 
@@ -434,7 +447,7 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn read_write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut()?;
         self.read_write_frame_bytes(bytes).await
     }
 
@@ -641,7 +654,7 @@ impl LabjackInteractions for LabjackClient {
             }
             Err(e) => match e {
                 TokioLabjackError::LabjackError(LabjackError::StreamNotRunning) => {
-                    log::debug!("Stream was already stopped, no need to stop again.");
+                    tracing::debug!("Stream was already stopped, no need to stop again.");
                     Ok(())
                 }
                 _ => Err(e),
@@ -864,14 +877,14 @@ impl LabjackInteractions for LabjackClient {
                 num_registers_to_read_ref,
             );
             let mut resultant_bytes = self.read_mbfb(&mut mbfb).await?;
-            log::debug!("raw resultant bytes: {resultant_bytes:?}");
+            tracing::debug!("raw resultant bytes: {resultant_bytes:?}");
 
             let num_samples_returned = resultant_bytes.get_u16();
             let backlog_bytes = resultant_bytes.get_u16();
             let status_code = resultant_bytes.get_u16();
             let additional_status_info = resultant_bytes.get_u16();
 
-            log::debug!(
+            tracing::debug!(
                 "num_samples_returned: {num_samples_returned:?}, backlog_bytes: {backlog_bytes:?}, status_code: {status_code:?}, additional_status_info: {additional_status_info:?}"
             );
 
@@ -881,7 +894,7 @@ impl LabjackInteractions for LabjackClient {
             more_data_available = backlog_bytes > 0;
 
             num_samples_to_read = num_samples_to_read.saturating_sub(num_samples_returned);
-            log::debug!("remaining desired sample reads: {num_samples_to_read:?}, more_data_available: {more_data_available:?}");
+            tracing::debug!("remaining desired sample reads: {num_samples_to_read:?}, more_data_available: {more_data_available:?}");
         }
 
         Ok(data)
@@ -900,7 +913,7 @@ impl LabjackInteractions for LabjackClient {
             ));
         }
 
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut()?;
         self.write_bytes(bytes).await
     }
 

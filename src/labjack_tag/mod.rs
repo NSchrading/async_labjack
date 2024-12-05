@@ -49,7 +49,7 @@ impl<T, R, W> LabjackTag<T, R, W> {
     /// # Examples
     ///
     /// ```
-    /// use tokio_labjack_lib::labjack_tag::{CanRead, CannotWrite, LabjackTag};
+    /// use tokio_labjack::labjack_tag::{CanRead, CannotWrite, LabjackTag};
     ///
     /// let AIN0: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
     /// ```
@@ -284,9 +284,9 @@ impl<W> LabjackTag<Bytes, CanRead, W> {
 
             let result =
                 timeout(client.command_response_timeout, client.read_mbfb(&mut mbfb)).await??;
-            log::debug!("total num bytes read from read_mbfb: {}", result.len());
+            tracing::debug!("total num bytes read from read_mbfb: {}", result.len());
             total_bytes_to_read = total_bytes_to_read.saturating_sub(result.len() as u32);
-            log::debug!("Still need to read {total_bytes_to_read} bytes");
+            tracing::debug!("Still need to read {total_bytes_to_read} bytes");
 
             data_bytes.extend_from_slice(&result);
         }

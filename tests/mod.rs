@@ -7,14 +7,14 @@ use std::borrow::Cow;
 use std::io;
 use std::pin::Pin;
 use tokio::time::Duration;
-use tokio_labjack_lib::client::{LabjackClient, LabjackInteractions, LabjackKind};
-use tokio_labjack_lib::helpers::bit_manipulation::be_bytes_to_u16_array;
-use tokio_labjack_lib::labjack_tag::StreamConfig;
-use tokio_labjack_lib::labjack_tag::{Addressable, HydratedTagValue, ReadableLabjackTag};
-use tokio_labjack_lib::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
-use tokio_labjack_lib::modbus_feedback::mbfb::ModbusFeedbackFrame;
-use tokio_labjack_lib::modbus_feedback::MBFB_FUNCTION_CODE;
-use tokio_labjack_lib::{
+use tokio_labjack::client::{LabjackClient, LabjackInteractions, LabjackKind};
+use tokio_labjack::helpers::bit_manipulation::be_bytes_to_u16_array;
+use tokio_labjack::labjack_tag::StreamConfig;
+use tokio_labjack::labjack_tag::{Addressable, HydratedTagValue, ReadableLabjackTag};
+use tokio_labjack::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
+use tokio_labjack::modbus_feedback::mbfb::ModbusFeedbackFrame;
+use tokio_labjack::modbus_feedback::MBFB_FUNCTION_CODE;
+use tokio_labjack::{
     STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS,
     STREAM_RESOLUTION_INDEX, STREAM_SAMPLES_PER_PACKET, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
 };
@@ -256,7 +256,7 @@ async fn test_read_write_frame_bytes() {
         write_counts_ref,
         Bytes::from(vec![0xAB, 0xCD, 0xEF, 0xFE]),
     );
-    let mbfb_bytes = mbfb.to_bytes_mut();
+    let mbfb_bytes = mbfb.to_bytes_mut().unwrap();
     let expected_bytes = mbfb_bytes.clone();
 
     let mock_returned_bytes = Bytes::from(vec![0x01, 0x10]);
@@ -300,7 +300,7 @@ async fn test_read_mbfb() {
     let read_counts_ref = &[read_counts];
 
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(read_address_ref, read_counts_ref);
-    let mbfb_bytes = mbfb.to_bytes_mut();
+    let mbfb_bytes = mbfb.to_bytes_mut().unwrap();
     let expected_bytes = mbfb_bytes.clone();
 
     let mock_returned_bytes = Bytes::from(vec![0x01, 0x10]);
@@ -350,7 +350,7 @@ async fn test_read_tags() {
     let address_ref = &[u64_tag_address, u32_tag_address, f32_tag_address];
 
     let mut mbfb = ModbusFeedbackFrame::new_read_frame(address_ref, &[4, 2, 2]);
-    let expected_mbfb_bytes = mbfb.to_bytes_mut();
+    let expected_mbfb_bytes = mbfb.to_bytes_mut().unwrap();
 
     let expected_returned_bytes = Bytes::from(vec![
         0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
@@ -419,7 +419,7 @@ async fn test_read_stream_config() {
     }
 
     let mut expected_mbfb = ModbusFeedbackFrame::new_read_frame(&read_addresses, &read_counts);
-    let expected_mbfb_bytes = expected_mbfb.to_bytes_mut();
+    let expected_mbfb_bytes = expected_mbfb.to_bytes_mut().unwrap();
 
     // Define the mock response bytes
     let mock_returned_bytes = Bytes::from(vec![

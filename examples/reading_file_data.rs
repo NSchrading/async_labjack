@@ -10,8 +10,8 @@
 
 use bytes::{BufMut, Bytes, BytesMut};
 use tokio::time::Duration;
-use tokio_labjack_lib::client::LabjackClient;
-use tokio_labjack_lib::{
+use tokio_labjack::client::LabjackClient;
+use tokio_labjack::{
     LabjackError, TokioLabjackError, FILE_IO_CLOSE, FILE_IO_DIR_CHANGE, FILE_IO_DIR_CURRENT,
     FILE_IO_DIR_FIRST, FILE_IO_DIR_NEXT, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
@@ -22,6 +22,7 @@ use tokio_labjack_lib::{
 async fn main() {
     env_logger::init();
 
+    // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
@@ -52,7 +53,7 @@ async fn main() {
         .await
         .unwrap();
     println!("The current working directory is '{cwd:?}'");
-    assert!(cwd == "/");
+    assert_eq!(cwd, "/");
 
     // Read the current working directory
     FILE_IO_DIR_FIRST.write(&mut client, 1).await.unwrap();

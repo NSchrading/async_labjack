@@ -1,21 +1,25 @@
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
-use tokio_labjack_lib::client::LabjackClient;
-use tokio_labjack_lib::client::LabjackInteractions;
-use tokio_labjack_lib::helpers::stream::process_stream;
-use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
+use tokio_labjack::client::LabjackClient;
+use tokio_labjack::client::LabjackInteractions;
+use tokio_labjack::helpers::stream::process_stream;
+use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::STREAM_DEBUG_GET_SELF_INDEX;
 
 #[tokio::main()]
 async fn main() {
     env_logger::init();
 
+    // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
+
+    // stop any currently running stream.
+    client.stop_stream().await.unwrap();
 
     // Spontaneous mode (auto_target = 1) sends data to port 702
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
@@ -67,19 +71,16 @@ async fn main() {
     while let Some(value) = rx.recv().await {
         // Process the received values
         if idx_0 {
-            assert!(value == 0);
+            assert_eq!(value, 0);
         } else {
-            assert!(value == 1);
+            assert_eq!(value, 1);
         }
         idx_0 = !idx_0;
         total_count += 1;
     }
 
-    assert!(total_count == TOTAL_SAMPLES_EXPECTED);
+    assert_eq!(total_count, TOTAL_SAMPLES_EXPECTED);
     println!("All values from the stream were consumed and as expected.");
-
-    // Stream burst ends the stream automatically, but if this was not a stream burst example
-    // you should stop the stream before disconnecting.
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();

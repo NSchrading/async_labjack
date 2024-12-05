@@ -1,5 +1,6 @@
 //! Functions for constructing and interacting with the custom
 //! [Labjack Modbus Feedback function](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76))
+use crate::{Result, TokioLabjackError};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::iter::zip;
 use tokio_modbus::Address;
@@ -26,9 +27,9 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack_lib::{AIN0, AIN1, TEST_FLOAT32};
+    /// use tokio_labjack::{AIN0, AIN1, TEST_FLOAT32};
     /// use bytes::Bytes;
-    /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will read AIN0 and AIN1 and write 5.4321 to TEST_FLOAT32.
     /// let mut mbfb = ModbusFeedbackFrame::new(
@@ -59,8 +60,8 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack_lib::{AIN0, AIN1};
-    /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use tokio_labjack::{AIN0, AIN1};
+    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will read AIN0 and AIN1.
     /// let mut mbfb = ModbusFeedbackFrame::new_read_frame(
@@ -82,9 +83,9 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack_lib::{TEST_FLOAT32, TEST_INT32};
+    /// use tokio_labjack::{TEST_FLOAT32, TEST_INT32};
     /// use bytes::Bytes;
-    /// use tokio_labjack_lib::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will write 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32.
     /// let mut mbfb = ModbusFeedbackFrame::new_write_frame(
@@ -116,7 +117,7 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// This function adds write bytes before read bytes. This allows for single operations that
     /// write to data and then return their newly written values as reads.
-    pub fn to_bytes_mut(&mut self) -> Bytes {
+    pub fn to_bytes_mut(&mut self) -> Result<Bytes> {
         let mut bytes = BytesMut::with_capacity(
             self.read_addresses.len() * 4 + self.write_addresses.len() * 4 + self.write_data.len(),
         );
@@ -127,11 +128,12 @@ impl<'a> ModbusFeedbackFrame<'a> {
             match *num_registers {
                 1 => bytes.put_u16(self.write_data.get_u16()),
                 2 => bytes.put_u32(self.write_data.get_u32()),
-                // todo make this an error result
-                _ => unreachable!(
-                    "There should never be a writeable tag with a register count not equal to 1
-                    or 2."
-                ),
+                _ => {
+                    return Err(TokioLabjackError::Other(
+                        "There should never be a writeable tag with a register count not equal to 1 or 2."
+                            .into(),
+                    ))
+                }
             }
         }
 
@@ -140,9 +142,9 @@ impl<'a> ModbusFeedbackFrame<'a> {
             bytes.put_u16(*address);
             bytes.put_u8(*count);
         }
-        log::debug!("Raw bytes of mbfb: {bytes:?}");
+        tracing::debug!("Raw bytes of mbfb: {bytes:?}");
 
-        bytes.freeze()
+        Ok(bytes.freeze())
     }
 }
 
@@ -156,7 +158,7 @@ mod tests {
         let read_counts = [1, 2, 4];
 
         let mut mbfb = ModbusFeedbackFrame::new_read_frame(&read_addresses, &read_counts);
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut().unwrap();
 
         // Expected bytes:
         // 0x00 0x00 0x01 0x01  (read address 1, count 1)
@@ -176,7 +178,7 @@ mod tests {
 
         let mut mbfb =
             ModbusFeedbackFrame::new_write_frame(&write_addresses, &write_counts, write_data);
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut().unwrap();
 
         // Expected bytes:
         // 0x01 0x00 0x01 0x01 0x12 0x34  (write address 1, count 1, data 0x1234)
@@ -202,7 +204,7 @@ mod tests {
             &write_counts,
             write_data,
         );
-        let bytes = mbfb.to_bytes_mut();
+        let bytes = mbfb.to_bytes_mut().unwrap();
 
         // Expected bytes:
         // 0x01 0x00 0x03 0x02 0x12 0x34 0x56 0x78  (write address 3, count 2, data 0x12345678)
@@ -214,5 +216,25 @@ mod tests {
             0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x02, 0x02,
         ];
         assert_eq!(bytes, Bytes::from(expected));
+    }
+
+    #[test]
+    fn test_invalid_mbfb() {
+        let write_addresses = [1];
+        let write_counts = [3];
+        let write_data = Bytes::from(vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC]);
+
+        let mut mbfb =
+            ModbusFeedbackFrame::new_write_frame(&write_addresses, &write_counts, write_data);
+
+        let res = mbfb.to_bytes_mut();
+        match res {
+            Err(e) => {
+                assert_eq!(e.to_string(), "There should never be a writeable tag with a register count not equal to 1 or 2.")
+            }
+            Ok(_) => {
+                panic!("Expected to receive an error result from to_bytes_mut!")
+            }
+        };
     }
 }

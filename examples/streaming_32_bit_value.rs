@@ -1,18 +1,27 @@
+//! Streams a 32-bit value (SYSTEM_TIMER_20HZ) using the STREAM_DATA_CAPTURE_16 register to capture
+//! the upper 16 bits.
+//!
+//! Streams at 1Hz, so we ensure that each SYSTEM_TIMER_20HZ value increases by 20.
+
 use tokio::time::{sleep, Duration};
-use tokio_labjack_lib::client::LabjackClient;
-use tokio_labjack_lib::client::LabjackInteractions;
-use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
+use tokio_labjack::client::LabjackClient;
+use tokio_labjack::client::LabjackInteractions;
+use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
 
 #[tokio::main()]
 async fn main() {
     env_logger::init();
 
+    // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
+
+    // stop any currently running stream.
+    client.stop_stream().await.unwrap();
 
     const NUM_SCANS: u32 = 5;
     const NUM_TAGS: u32 = 2;
@@ -48,7 +57,7 @@ async fn main() {
         .read_stream_cr(TOTAL_SAMPLES_EXPECTED as u16)
         .await
         .unwrap();
-    assert!(data.len() == TOTAL_SAMPLES_EXPECTED as usize);
+    assert_eq!(data.len(), TOTAL_SAMPLES_EXPECTED as usize);
 
     let mut start = true;
     let mut prev_val: u32 = 0;
@@ -72,9 +81,6 @@ async fn main() {
     }
 
     println!("All values from the stream were consumed and as expected.");
-
-    // Stream burst ends the stream automatically, but if this was not a stream burst example
-    // you should stop the stream before disconnecting.
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();

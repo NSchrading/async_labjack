@@ -7,25 +7,21 @@ repository = "https://github.com/nschrading/tokio_labjack"
 version = "0.1.0"
 
 [lib]
-name = "tokio_labjack_lib"
-path = "src/lib.rs"
-
-[[bin]]
 name = "tokio_labjack"
-path = "src/bin.rs"
+path = "src/lib.rs"
 
 [dependencies]
 async-trait = "*"
 bytes = "*"
 derive_builder = "*"
 enum_dispatch = "*"
-env_logger = "*"
-log = "*"
 thiserror = "*"
 tokio = { version = "1.4", features = ["rt-multi-thread", "macros", "time"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
+tracing = { version = "*", features = ["log"] }
 
 [dev-dependencies]
+env_logger = "*"
 mockall = "*"
 
 [profile.release]

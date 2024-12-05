@@ -212,8 +212,8 @@ pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibratio
 /// # Examples
 ///
 /// ```
-/// use tokio_labjack_lib::helpers::calibrations::T4CalibrationsBuilder;
-/// use tokio_labjack_lib::helpers::calibrations::ain_binary_to_volts;
+/// use tokio_labjack::helpers::calibrations::T4CalibrationsBuilder;
+/// use tokio_labjack::helpers::calibrations::ain_binary_to_volts;
 ///
 /// let calibrations = T4CalibrationsBuilder::default().build().unwrap();
 /// ain_binary_to_volts(65535, calibrations.ain0_cal.slope, calibrations.ain0_cal.offset);

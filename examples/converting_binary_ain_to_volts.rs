@@ -13,20 +13,19 @@
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
-use tokio_labjack_lib::client::LabjackClient;
-use tokio_labjack_lib::client::LabjackInteractions;
-use tokio_labjack_lib::helpers::calibrations::t7_ain_binary_to_volts;
-use tokio_labjack_lib::helpers::calibrations::Calibrations;
-use tokio_labjack_lib::helpers::calibrations::T7Calibrations;
-use tokio_labjack_lib::helpers::stream::process_stream;
-use tokio_labjack_lib::labjack_tag::HydratedTagValue;
-use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
+use tokio_labjack::client::LabjackClient;
+use tokio_labjack::client::LabjackInteractions;
+use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
+use tokio_labjack::helpers::calibrations::T7Calibrations;
+use tokio_labjack::helpers::stream::process_stream;
+use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
 
 #[tokio::main()]
 async fn main() {
     env_logger::init();
 
+    // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
@@ -69,7 +68,10 @@ async fn main() {
     println!("Raw 24-bit value: {raw_24_bit_ain1_binary:?}");
     println!("Our conversion: {volt_value:?}V, on device: {ain_volt_converted_on_device:?}V");
 
-    // Now let's stream some 16-bit AIN values:
+    // Now let's stream some 16-bit AIN values
+
+    // stop any currently running stream.
+    client.stop_stream().await.unwrap();
 
     // Spontaneous mode (auto_target = 1) sends data to port 702
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
@@ -117,7 +119,7 @@ async fn main() {
         total_count += 1;
     }
 
-    assert!(total_count == TOTAL_SAMPLES_EXPECTED);
+    assert_eq!(total_count, TOTAL_SAMPLES_EXPECTED);
     println!("All values from the stream were consumed and as expected.");
 
     println!("Success! Disconnecting...");

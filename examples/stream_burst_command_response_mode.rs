@@ -1,18 +1,22 @@
 use tokio::time::{sleep, Duration};
-use tokio_labjack_lib::client::LabjackClient;
-use tokio_labjack_lib::client::LabjackInteractions;
-use tokio_labjack_lib::labjack_tag::StreamConfigBuilder;
-use tokio_labjack_lib::STREAM_DEBUG_GET_SELF_INDEX;
+use tokio_labjack::client::LabjackClient;
+use tokio_labjack::client::LabjackInteractions;
+use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::STREAM_DEBUG_GET_SELF_INDEX;
 
 #[tokio::main()]
 async fn main() {
     env_logger::init();
 
+    // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
     let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
+
+    // stop any currently running stream.
+    client.stop_stream().await.unwrap();
 
     // command response mode (auto_target = 16) sends data to the STREAM_DATA_CR tag
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
@@ -53,19 +57,16 @@ async fn main() {
         .await
         .unwrap();
 
-    assert!(data.len() == TOTAL_SAMPLES_EXPECTED as usize);
+    assert_eq!(data.len(), TOTAL_SAMPLES_EXPECTED as usize);
     for values in data.chunks_exact(NUM_TAGS as usize) {
         let (idx_0, idx_1, idx_2, idx_3) = (values[0], values[1], values[2], values[3]);
-        assert!(idx_0 == 0);
-        assert!(idx_1 == 1);
-        assert!(idx_2 == 2);
-        assert!(idx_3 == 3);
+        assert_eq!(idx_0, 0);
+        assert_eq!(idx_1, 1);
+        assert_eq!(idx_2, 2);
+        assert_eq!(idx_3, 3);
     }
 
     println!("All values from the stream were consumed and as expected.");
-
-    // Stream burst ends the stream automatically, but if this was not a stream burst example
-    // you should stop the stream before disconnecting.
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();
