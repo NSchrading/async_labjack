@@ -14,7 +14,7 @@
 use tokio::net::TcpStream;
 use tokio::signal;
 use tokio::sync::mpsc;
-use tokio::time::Duration;
+use tokio::time::{sleep, timeout, Duration};
 use tokio_labjack::client::LabjackClient;
 use tokio_labjack::client::LabjackInteractions;
 use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
@@ -33,6 +33,47 @@ fn print_converted_stream_val(value: u16, ain_calibration: &T7AinCalibration) {
     let volt_value = t7_ain_binary_to_volts(value as u32, ain_calibration);
     println!("{volt_value:?}V");
 }
+
+async fn connect_with_retries(
+    socket_addr: std::net::SocketAddr,
+    retry_interval: Duration,
+) -> TcpStream {
+    loop {
+        match timeout(retry_interval, TcpStream::connect(socket_addr)).await {
+            Ok(Ok(stream)) => {
+                println!("Connected to labjack stream port 702!");
+                return stream;
+            }
+            e => {
+                println!("Error connecting to {socket_addr:?}: {e:?}");
+                println!("Retrying in {retry_interval:?}...");
+            }
+        }
+    }
+}
+
+async fn connect_ljc_with_retries(
+    socket_addr: std::net::SocketAddr,
+    retry_interval: Duration,
+) -> LabjackClient {
+    // todo: maybe add this to client api
+    loop {
+        match LabjackClient::connect_with_timeout(socket_addr, retry_interval).await {
+            Ok(client) => {
+                println!("Connected to LabjackClient!");
+                return client;
+            }
+            Err(e) => {
+                println!("Error connecting to LabjackClient: {:?}", e);
+            }
+        }
+    }
+}
+
+// todo: complicated idea - labjack allows a second connection on port 502
+// this second client could be a heartbeat client that just attempts to write to a test
+// register and read it.
+// If it detects an issue, it could send a signal so that the other client triggers a reconnect.
 
 #[tokio::main()]
 async fn main() {
@@ -103,7 +144,6 @@ async fn main() {
         .build()
         .unwrap();
 
-    let stream = TcpStream::connect("192.168.42.100:702").await.unwrap();
     client
         .start_stream(new_stream_config, vec![AIN1.into()])
         .await
@@ -155,21 +195,41 @@ async fn main() {
     // As the data streams in, we need to parse it from the Modbus Feedback Spontaneous
     // Packet Protocol to the data bytes. We do this in a background async task.
     let stream_processing_task = tokio::spawn(async move {
-        if let Err(e) = process_stream(stream, tx).await {
-            match e {
-                TokioLabjackError::ProcessStreamSendError(tokio::sync::mpsc::error::SendError(
-                    val,
-                )) => {
-                    // The value that the process_stream failed to send is returned in the SendError
-                    let volt_value = t7_ain_binary_to_volts(val as u32, &t7_cal.hs_gain_1_ain_cal);
-                    eprintln!("Process stream send failed: {e:?}, lost value: {volt_value}V");
+        let mut stream = connect_with_retries(
+            "192.168.42.100:702".parse().unwrap(),
+            Duration::from_secs(3),
+        )
+        .await;
+
+        loop {
+            if let Err(e) = process_stream(stream, &tx, Duration::from_secs(3)).await {
+                match e {
+                    TokioLabjackError::ProcessStreamSendError(
+                        tokio::sync::mpsc::error::SendError(val),
+                    ) => {
+                        // The value that the process_stream failed to send is returned in the SendError
+                        let volt_value =
+                            t7_ain_binary_to_volts(val as u32, &t7_cal.hs_gain_1_ain_cal);
+                        eprintln!("Process stream send failed: {e:?}, lost value: {volt_value}V");
+                        return;
+                    }
+                    // todo: may need to restart stream somehow
+                    TokioLabjackError::TimeElapsed(_) => {
+                        stream = connect_with_retries(
+                            "192.168.42.100:702".parse().unwrap(),
+                            Duration::from_secs(3),
+                        )
+                        .await;
+                    }
+                    _ => {
+                        eprintln!("Stream processing ended in error: {e:?}");
+                        return;
+                    }
                 }
-                _ => {
-                    eprintln!("Stream processing ended in error: {e:?}");
-                }
+            } else {
+                println!("Stream processing ended nominally.");
+                return;
             }
-        } else {
-            println!("Stream processing ended nominally.");
         }
     });
 
@@ -223,6 +283,16 @@ async fn main() {
         },
     }
 
-    println!("Success! Disconnecting...");
-    client.disconnect().await.unwrap();
+    println!("Success!");
+    loop {
+        // this is silly but if the labjack lost connection, we need to re-attempt connection
+        // to stop the stream, then end.
+        println!("Disconnecting...");
+        if (client.disconnect().await).is_err() {
+            client = connect_ljc_with_retries(socket_addr, Duration::from_secs(3)).await;
+        } else {
+            println!("Successfully disconnected");
+            break;
+        }
+    }
 }
