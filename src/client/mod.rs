@@ -450,11 +450,12 @@ fn read_tags_to_bytes(tags: &[ReadableLabjackTag]) -> Bytes {
 impl LabjackInteractions for LabjackClient {
     #[tracing::instrument(name = "Calling MBFB")]
     async fn read_write_frame_bytes(&mut self, bytes: Bytes) -> Result<Bytes> {
-        // todo these fns need timeouts
-        match self
-            .context
-            .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
-            .await
+        match timeout(
+            self.command_response_timeout,
+            self.context
+                .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes))),
+        )
+        .await?
         {
             // Convert tokio_modbus::Error to TokioLabjackError
             Ok(Ok(response)) => match response {
@@ -645,12 +646,14 @@ impl LabjackInteractions for LabjackClient {
         );
 
         // write the addresses that should be streamed to STREAM_SCANLIST_ADDRESS<N>
-        self.context
-            .write_multiple_registers(
+        timeout(
+            self.command_response_timeout,
+            self.context.write_multiple_registers(
                 STREAM_SCANLIST_ADDRESS0.address,
                 &u8_to_u16_vec(&data_bytes),
-            )
-            .await??;
+            ),
+        )
+        .await???;
 
         // start the stream - check that it was set to 1.
         match self
@@ -980,19 +983,21 @@ impl LabjackInteractions for LabjackClient {
     }
 
     async fn write_bytes(&mut self, bytes: Bytes) -> Result<()> {
-        let result = self
-            .context
-            .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes)))
-            .await
-            .map(|result| {
-                result.map(|response| match response {
-                    Response::Custom(function_code, words) => {
-                        debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
-                        debug_assert_eq!(words.len(), 0);
-                    }
-                    _ => unreachable!("call() should reject mismatching responses"),
-                })
-            })?;
+        let result = timeout(
+            self.command_response_timeout,
+            self.context
+                .call(Request::Custom(MBFB_FUNCTION_CODE, Cow::Borrowed(&bytes))),
+        )
+        .await?
+        .map(|result| {
+            result.map(|response| match response {
+                Response::Custom(function_code, words) => {
+                    debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
+                    debug_assert_eq!(words.len(), 0);
+                }
+                _ => unreachable!("call() should reject mismatching responses"),
+            })
+        })?;
 
         match result {
             Ok(res) => Ok(res),
