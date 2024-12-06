@@ -18,11 +18,21 @@ use tokio::time::Duration;
 use tokio_labjack::client::LabjackClient;
 use tokio_labjack::client::LabjackInteractions;
 use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
-use tokio_labjack::helpers::calibrations::T7Calibrations;
+use tokio_labjack::helpers::calibrations::{T7AinCalibration, T7Calibrations};
 use tokio_labjack::helpers::stream::process_stream;
 use tokio_labjack::labjack_tag::StreamConfigBuilder;
 use tokio_labjack::TokioLabjackError;
 use tokio_labjack::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
+use tokio_util::sync::CancellationToken;
+
+/// Process the received values and print to console.
+/// Note that we use hs instead of hr calibrations here. Streaming always uses the lower
+/// precision 16-bit ADCs and always returns u16s.
+/// See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
+fn print_converted_stream_val(value: u16, ain_calibration: &T7AinCalibration) {
+    let volt_value = t7_ain_binary_to_volts(value as u32, ain_calibration);
+    println!("{volt_value:?}V");
+}
 
 #[tokio::main()]
 async fn main() {
@@ -78,8 +88,12 @@ async fn main() {
 
     // Spontaneous mode (auto_target = 1) sends data to port 702
     // num_scans defaults to 0 (runs forever)
-    // Buffer data into packets of 1 sample each for min latency.
+    // Buffer data into packets of 1 sample each for min latency between sampling and processng.
     // Samples at 10Hz.
+    // Note that if scan_rate is much higher and samples_per_packet is still small,
+    // you may run into buffer issues where the processing can't keep up. To address,
+    // increasing samples_per_packet should help, at the cost of increasing the time between
+    // sampling and processing.
     const NUM_TAGS: u32 = 1;
     let new_stream_config = StreamConfigBuilder::default()
         .num_addresses(NUM_TAGS)
@@ -95,19 +109,45 @@ async fn main() {
         .await
         .unwrap();
 
+    // We'll use this channel to send parsed stream values from the process_stream task
+    // to the receiving task
     let (tx, mut rx) = mpsc::channel(1024);
+
+    // We use this channel to send results from the receive task to the main task when
+    // ctrl+c is encountered. We can't join on the receive task after the select! because
+    // JoinHandles are not cloneable and it is consumed in the select!
+    let (tx_oneshot, rx_oneshot) = tokio::sync::oneshot::channel();
+
+    // A token to indicate to the receive channel to end and clean up after getting ctrl+c
+    let token = CancellationToken::new();
+    let cloned_token = token.clone();
 
     // process_stream will put the raw u16 stream values in the Receiver
     let receive_task = tokio::spawn(async move {
         let mut total_count = 0;
-        while let Some(value) = rx.recv().await {
-            // Process the received values
-            // Note that we use hs instead of hr calibrations here. Streaming always uses the lower
-            // precision 16-bit ADCs and always returns u16s.
-            // See https://support.labjack.com/docs/a-3-2-2-t7-noise-and-resolution-t-series-datasheet
-            let volt_value = t7_ain_binary_to_volts(value as u32, &t7_cal.hs_gain_1_ain_cal);
-            println!("{volt_value:?}V");
-            total_count += 1;
+
+        loop {
+            tokio::select! {
+                _ = cloned_token.cancelled() => {
+                    // Time to end. Close the receiving end and consume values until they stop
+                    rx.close();
+                    while let Some(value) = rx.recv().await {
+                        print_converted_stream_val(value, &t7_cal.hs_gain_1_ain_cal);
+                        total_count += 1;
+                    }
+                    break;
+
+                }
+                Some(value) = rx.recv() => {
+                    // Process the received values
+                    print_converted_stream_val(value, &t7_cal.hs_gain_1_ain_cal);
+                    total_count += 1;
+                }
+            }
+        }
+
+        if let Err(e) = tx_oneshot.send(total_count) {
+            eprintln!("Unable to send result!: {e:?}");
         }
         total_count
     });
@@ -122,10 +162,10 @@ async fn main() {
                 )) => {
                     // The value that the process_stream failed to send is returned in the SendError
                     let volt_value = t7_ain_binary_to_volts(val as u32, &t7_cal.hs_gain_1_ain_cal);
-                    println!("Process stream send failed: {e:?}, lost value: {volt_value}V");
+                    eprintln!("Process stream send failed: {e:?}, lost value: {volt_value}V");
                 }
                 _ => {
-                    println!("Stream processing ended in error: {e:?}");
+                    eprintln!("Stream processing ended in error: {e:?}");
                 }
             }
         } else {
@@ -133,25 +173,55 @@ async fn main() {
         }
     });
 
-    // Ctrl+c is the only way to end the program. If you want other means of ending the
-    // program, then you should put this in a select! with the other futures that could
-    // cause program end
-    signal::ctrl_c().await.unwrap();
-    println!("Captured ctrl+c, ending program gracefully.");
+    // Wait for ctrl+c to end the program, which is the nominal way to end.
+    // If either of the other tasks end, that's unexpected and we'll log that as
+    // an error.
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            println!("Got ctrl+c, ending gracefully.");
 
-    // End the stream processing task. This will ensure that all values are sent, and once
-    // they are, the channel will be closed. The receive_task will get a None when
-    // the channel is closed and end gracefully.
-    stream_processing_task.abort();
-    if let Err(e) = stream_processing_task.await {
-        if !e.is_cancelled() {
-            println!("Unexpected error ending processing task: {e:?}");
-        }
+            // send the cancellation notification to the receive task
+            token.cancel();
+
+            // await the results from the receive task
+            match rx_oneshot.await {
+                Ok(total_count) => {
+                    println!("Received {total_count} total values.");
+                }
+                Err(e) => {
+                    eprintln!("Stream processing task was cancelled: {e:?}");
+                }
+            }
+        },
+        _ = stream_processing_task => {
+            eprintln!("something caused stream_processing_task to end early!");
+
+            // send the cancellation notification to the receive task
+            token.cancel();
+
+            // await the results from the receive task
+            match rx_oneshot.await {
+                Ok(total_processed) => {
+                    eprintln!("Received {total_processed} total values before failing.");
+                }
+                Err(e) => {
+                    eprintln!("Stream processing task was cancelled: {e:?}");
+                }
+            }
+
+        },
+        result = receive_task => {
+            eprintln!("something caused receive_task to end early!");
+            match result {
+                Ok(total_processed) => {
+                    eprintln!("Received {total_processed} total values before failing.");
+                }
+                Err(e) => {
+                    eprintln!("Unexpected return from receive_task: {e:?}");
+                }
+            }
+        },
     }
-
-    // Get the number of values processed by the receive_task
-    let total_count = receive_task.await.unwrap();
-    println!("Received {total_count} total values.");
 
     println!("Success! Disconnecting...");
     client.disconnect().await.unwrap();

@@ -23,6 +23,7 @@ tokio = { version = "1.4", features = [
     "signal",
 ] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
+tokio-util = "*"
 tracing = { version = "*", features = ["log"] }
 
 [dev-dependencies]
