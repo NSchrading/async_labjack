@@ -59,7 +59,7 @@ async fn main() {
     // Packet Protocol to the data bytes. We do this in a background async task.
     let (tx, mut rx) = mpsc::channel(1024);
     let stream_processing_task = tokio::spawn(async move {
-        if let Err(e) = process_stream(stream, tx).await {
+        if let Err(e) = process_stream(stream, &tx, Duration::from_secs(3)).await {
             println!("Stream processing ended in failure: {e}");
         } else {
             println!("Stream processing ended nominally.");

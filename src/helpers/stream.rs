@@ -5,6 +5,7 @@ use crate::{LabjackError, Result, TokioLabjackError};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
+use tokio::time::{timeout, Duration};
 
 /// Given a [`TcpStream`] receiving stream data, parse the data into u16s and
 /// transmit them to the provided tx [`tokio::sync::mpsc::Sender`]. If stream burst was configured
@@ -12,14 +13,19 @@ use tokio::sync::mpsc::Sender;
 /// is sent from the labjack. Otherwise this may run forever or until the receive end closes or an
 /// unexpected error occurs. This function will handle stream auto recovery if necessary,
 /// and end if [`LabjackError::StreamScanOverlap`], [`LabjackError::StreamAutoRecoverEndOverflow`],
-/// or [`LabjackError::StreamBufferFull`] occurs.
-pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()> {
+/// [`LabjackError::StreamBufferFull`], or a Timeout occurs. `timeout_duration` is used to set
+/// how long to wait for new data in the stream. If that duration elapses, the processing will end.
+pub async fn process_stream(
+    mut stream: TcpStream,
+    tx: &Sender<u16>,
+    timeout_duration: Duration,
+) -> Result<()> {
     // See https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet#id-3.2.4Low-LevelStream[T-SeriesDatasheet]-DataCollection
     // for information on the packet format
     let mut header_buf = [0; 16];
 
     loop {
-        if let Err(e) = stream.read_exact(&mut header_buf).await {
+        if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut header_buf)).await? {
             return Err(TokioLabjackError::TokioModbusError(
                 tokio_modbus::Error::Transport(e),
             ));
@@ -81,7 +87,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
                 let num_bytes_remaining = num_samples_remaining * 2;
                 let mut data_buf = vec![0; num_bytes_remaining as usize];
 
-                if let Err(e) = stream.read_exact(&mut data_buf).await {
+                if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
                     return Err(TokioLabjackError::TokioModbusError(
                         tokio_modbus::Error::Transport(e),
                     ));
@@ -122,7 +128,7 @@ pub async fn process_stream(mut stream: TcpStream, tx: Sender<u16>) -> Result<()
         }
         let mut data_buf = vec![0; num_bytes as usize];
 
-        if let Err(e) = stream.read_exact(&mut data_buf).await {
+        if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
             return Err(TokioLabjackError::TokioModbusError(
                 tokio_modbus::Error::Transport(e),
             ));

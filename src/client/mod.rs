@@ -152,7 +152,9 @@ impl LabjackClient {
 
     /// Disconnect from the labjack. On disconnection, will attempt to stop streaming if a stream
     /// is running.
-    pub async fn disconnect(&mut self) -> io::Result<()> {
+    pub async fn disconnect(&mut self) -> Result<()> {
+        // todo: before we call stop_stream we should check for connection health,
+        // maybe with .writable?
         if let Err(e) = self.stop_stream().await {
             match e {
                 TokioLabjackError::TokioModbusError(tokio_modbus::Error::Transport(e))
@@ -165,10 +167,16 @@ impl LabjackClient {
                     // Nothing to do but note the error and attempt disconnect. User will
                     // have to try stopping stream via powercycle or command.
                     tracing::error!("Unable to stop stream before disconnect: {e}");
+                    return Err(e);
                 }
             }
         }
-        self.context.disconnect().await
+        if let Err(e) = self.context.disconnect().await {
+            return Err(TokioLabjackError::TokioModbusError(
+                tokio_modbus::Error::Transport(e),
+            ));
+        }
+        Ok(())
     }
 
     /// Get the kind of labjack from PRODUCT_ID
