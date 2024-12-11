@@ -16,12 +16,7 @@ bytes = "*"
 derive_builder = "*"
 enum_dispatch = "*"
 thiserror = "*"
-tokio = { version = "1.4", features = [
-    "rt-multi-thread",
-    "macros",
-    "time",
-    "signal",
-] }
+tokio = { version = "1.4", features = ["time", "rt", "net"] }
 tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
 tokio-util = "*"
 tracing = { version = "*", features = ["log"] }
@@ -29,6 +24,13 @@ tracing = { version = "*", features = ["log"] }
 [dev-dependencies]
 env_logger = "*"
 mockall = "*"
+tokio = { version = "1.4", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "signal",
+    "net",
+] }
 
 [profile.release]
 codegen-units = 1

@@ -189,8 +189,6 @@ impl LabjackClient {
     /// Disconnect from the labjack. On disconnection, will attempt to stop streaming if a stream
     /// is running.
     pub async fn disconnect(&mut self) -> Result<()> {
-        // todo: before we call stop_stream we should check for connection health,
-        // maybe with .writable?
         if let Err(e) = self.stop_stream().await {
             match e {
                 TokioLabjackError::TokioModbusError(tokio_modbus::Error::Transport(e))

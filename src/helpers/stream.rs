@@ -45,14 +45,13 @@ pub async fn process_stream(
         }
 
         // todo: could check on the transaction id, making sure it's incrementing
-
-        let backlog_bytes = u16::from_be_bytes([header_buf[10], header_buf[11]]);
         let status_code = u16::from_be_bytes([header_buf[12], header_buf[13]]);
         match status_code.try_into() {
             Ok(LabjackError::LjSuccess) => {}
             Ok(LabjackError::StreamAutoRecoverActive) => {
                 #[cfg(debug_assertions)]
                 {
+                    let backlog_bytes = u16::from_be_bytes([header_buf[10], header_buf[11]]);
                     tracing::debug!(
                         "Stream buffer overload occured. In auto recovery mode, but continuing scan. 
                         Number of backlog bytes = {}",
