@@ -35,7 +35,7 @@ async fn main() {
 
     client
         .start_stream(
-            new_stream_config,
+            &new_stream_config,
             vec![
                 STREAM_DEBUG_GET_SELF_INDEX.into(),
                 STREAM_DEBUG_GET_SELF_INDEX.into(),

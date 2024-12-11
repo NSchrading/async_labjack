@@ -44,7 +44,7 @@ async fn main() {
     // by ~20.
     client
         .start_stream(
-            new_stream_config,
+            &new_stream_config,
             vec![SYSTEM_TIMER_20HZ.into(), STREAM_DATA_CAPTURE_16.into()],
         )
         .await

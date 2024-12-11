@@ -41,7 +41,7 @@ async fn main() {
     let stream = TcpStream::connect("192.168.42.100:702").await.unwrap();
     client
         .start_stream(
-            new_stream_config,
+            &new_stream_config,
             vec![
                 STREAM_DEBUG_GET_SELF_INDEX.into(),
                 STREAM_DEBUG_GET_SELF_INDEX.into(),

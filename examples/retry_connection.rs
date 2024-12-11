@@ -1,37 +1,13 @@
+//! Reads the TEST register in a loop, reconnecting to the labjack if disconnections occur.
+//! To test, try unplugging the ethernet cable from the labjack and then reconnecting.
+//!
+//! Tries to connect to the labjack up to 20 times. If not fails and exits.
+//!
+//! Waits for ctrl+c to end otherwise.
+
 use tokio::time::{sleep, Duration};
 use tokio_labjack::client::LabjackClient;
 use tokio_labjack::TEST;
-
-/// Tries to connect to the LabjackClient at the given address, retrying indefinitely
-/// until a connection is established.
-///
-/// # Arguments
-///
-/// * `socket_addr` - The socket address of the Labjack device.
-/// * `retry_interval` - The time interval between connection attempts.
-///
-/// # Returns
-///
-/// A `LabjackClient` containing the connected client if successful
-async fn connect_with_retries(
-    socket_addr: std::net::SocketAddr,
-    retry_interval: Duration,
-) -> LabjackClient {
-    // todo: maybe add this to client api
-    loop {
-        match LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000)).await {
-            Ok(client) => {
-                println!("Connected to LabjackClient!");
-                return client;
-            }
-            Err(e) => {
-                println!("Error connecting to LabjackClient: {:?}", e);
-                println!("Retrying in {:?}...", retry_interval);
-                sleep(retry_interval).await;
-            }
-        }
-    }
-}
 
 #[tokio::main()]
 async fn main() {
@@ -40,7 +16,9 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = connect_with_retries(socket_addr, Duration::from_secs(1)).await;
+    let mut client = LabjackClient::connect_with_retries(socket_addr, Duration::from_secs(1), 20)
+        .await
+        .unwrap();
     client.command_response_timeout = Duration::from_millis(500);
 
     let read_task = tokio::spawn(async move {
@@ -52,7 +30,13 @@ async fn main() {
                 }
                 Err(e) => {
                     println!("Error occurred reading: {e}");
-                    client = connect_with_retries(socket_addr, Duration::from_secs(1)).await;
+                    client = LabjackClient::connect_with_retries(
+                        socket_addr,
+                        Duration::from_secs(1),
+                        20,
+                    )
+                    .await
+                    .unwrap();
                 }
             }
             sleep(Duration::from_secs(1)).await;
@@ -61,7 +45,10 @@ async fn main() {
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            println!("Got ctrl+c, ending gracefully.");
+            // If ending streaming or other cleanup required, you may want to use notifications to
+            // detect when ctrl+c was hit and notify the read_task to clean up. See
+            // streaming_ain_with_graceful_cleanup as an example.
+            println!("Got ctrl+c, ending...");
         },
         _ = read_task => {
             eprintln!("something caused read_task to end early!");

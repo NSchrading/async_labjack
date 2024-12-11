@@ -150,6 +150,42 @@ impl LabjackClient {
         timeout(timeout_duration, Self::connect(socket_addr)).await?
     }
 
+    /// Connect to the labjack at address `socket_addr`, waiting for the `timeout_duration` to
+    /// connect. If unable to connect within `timeout_duration`, then will keep attempting
+    /// connection, until `max_attempts` is reached.
+    pub async fn connect_with_retries(
+        socket_addr: std::net::SocketAddr,
+        retry_interval: Duration,
+        max_attempts: usize,
+    ) -> Result<Self> {
+        let mut num_attempts: usize = 0;
+        loop {
+            match LabjackClient::connect_with_timeout(socket_addr, retry_interval).await {
+                Ok(client) => {
+                    tracing::info!("Connected to LabjackClient!");
+                    return Ok(client);
+                }
+                Err(e) => {
+                    tracing::debug!("Error connecting to LabjackClient: {:?}", e);
+                }
+            }
+            match num_attempts.checked_add(1) {
+                Some(num) => {
+                    num_attempts = num;
+                    if num_attempts >= max_attempts {
+                        return Err(TokioLabjackError::Other("Max attempts reached.".into()));
+                    }
+                }
+                None => {
+                    tracing::debug!("Max possible attempts reached");
+                    return Err(TokioLabjackError::Other(
+                        "Max possible attempts reached.".into(),
+                    ));
+                }
+            }
+        }
+    }
+
     /// Disconnect from the labjack. On disconnection, will attempt to stop streaming if a stream
     /// is running.
     pub async fn disconnect(&mut self) -> Result<()> {
@@ -321,7 +357,7 @@ pub trait LabjackInteractions {
     /// to run on your device.
     async fn start_stream(
         &mut self,
-        config: StreamConfig,
+        config: &StreamConfig,
         tags: Vec<ReadableLabjackTag>,
     ) -> Result<()>;
 
@@ -595,7 +631,7 @@ impl LabjackInteractions for LabjackClient {
 
     async fn start_stream(
         &mut self,
-        config: StreamConfig,
+        config: &StreamConfig,
         tags: Vec<ReadableLabjackTag>,
     ) -> Result<()> {
         if tags.len() != config.num_addresses as usize {
