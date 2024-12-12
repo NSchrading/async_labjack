@@ -44,6 +44,20 @@ impl TryInto<T7Calibrations> for Calibrations {
     }
 }
 
+impl TryInto<T4Calibrations> for Calibrations {
+    type Error = TokioLabjackError;
+
+    fn try_into(self) -> Result<T4Calibrations> {
+        match self {
+            Calibrations::T4Calibrations(cal) => Ok(cal),
+            _ => Err(TokioLabjackError::Other(format!(
+                "Expected T4Calibrations, got {:?}",
+                self
+            ))),
+        }
+    }
+}
+
 /// Calibration constants for T4 high voltage analog input conversion.
 /// See [Labjack documentation](https://support.labjack.com/docs/20-0-0-t4-calibration-constants-t-series-datasheet)
 /// Defaults to the nominal calibrations for +/- 10V HV range AIN0.
@@ -220,4 +234,158 @@ pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibratio
 /// ```
 pub fn ain_binary_to_volts(ain_binary: u16, slope: f32, offset: f32) -> f32 {
     (ain_binary as f32) * slope + offset
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_t7_ain_binary_to_volts_16bit() {
+        // default is +/- 10V
+        let ain_calibration = T7AinCalibrationBuilder::default().build().unwrap();
+        let ain_binary: u32 = 65535;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((10.1..=10.2).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 0;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-10.6..=-10.5).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 32768;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-0.3..=0.0).contains(&volts), "{volts}");
+    }
+
+    #[test]
+    fn test_t7_ain_binary_to_volts_16bit_1v_range() {
+        // use default values for +/- 1V
+        let ain_calibration = T7AinCalibrationBuilder::default()
+            .positive_slope(0.000031580578)
+            .negative_slope(-0.0000315806)
+            .binary_center(33523.0)
+            .voltage_offset(-1.0586956)
+            .build()
+            .unwrap();
+        let ain_binary: u32 = 65535;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((1.01..=1.02).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 0;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-1.06..=-1.05).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 32768;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-0.03..=-0.02).contains(&volts), "{volts}");
+    }
+
+    #[test]
+    fn test_t7_ain_binary_to_volts_24bit() {
+        // default is +/- 10V
+        let ain_calibration = T7AinCalibrationBuilder::default().build().unwrap();
+        let ain_binary: u32 = 16777215;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((10.1..=10.2).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 0;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-10.6..=-10.5).contains(&volts), "{volts}");
+
+        let ain_binary: u32 = 8388607;
+        let volts = t7_ain_binary_to_volts(ain_binary, &ain_calibration);
+        assert!((-0.3..=-0.2).contains(&volts), "{volts}");
+    }
+
+    #[test]
+    fn test_ain_binary_to_volts() {
+        // default is +/- 10V
+        let calibrations = T4CalibrationsBuilder::default().build().unwrap();
+        let ain_binary: u16 = 65535;
+
+        let volts = ain_binary_to_volts(
+            ain_binary,
+            calibrations.ain0_cal.slope,
+            calibrations.ain0_cal.offset,
+        );
+        assert!((10.6..=10.7).contains(&volts), "{volts}");
+
+        let ain_binary: u16 = 0;
+        let volts = ain_binary_to_volts(
+            ain_binary,
+            calibrations.ain0_cal.slope,
+            calibrations.ain0_cal.offset,
+        );
+        assert!((-10.6..=-10.5).contains(&volts), "{volts}");
+
+        let ain_binary: u16 = 32768;
+        let volts = ain_binary_to_volts(
+            ain_binary,
+            calibrations.ain0_cal.slope,
+            calibrations.ain0_cal.offset,
+        );
+        assert!((0.0..=0.1).contains(&volts), "{volts}");
+    }
+
+    #[test]
+    fn test_from_t7() {
+        let ain_calibration = T7CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        assert!(matches!(cal, Calibrations::T7Calibrations(_)));
+    }
+
+    #[test]
+    fn test_from_t4() {
+        let ain_calibration = T4CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        assert!(matches!(cal, Calibrations::T4Calibrations(_)));
+    }
+
+    #[test]
+    fn test_cal_to_t7() {
+        let ain_calibration = T7CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        #[allow(clippy::useless_conversion)]
+        match cal.try_into() {
+            Ok(Calibrations::T7Calibrations(cal)) => {
+                assert_eq!(cal.temperature_cal.slope, -92.6);
+            }
+            cal => {
+                panic!("Unexpected conversion: {cal:?}")
+            }
+        }
+
+        let ain_calibration = T7CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        match std::convert::TryInto::<T4Calibrations>::try_into(cal) {
+            Err(_) => {}
+            Ok(cal) => {
+                panic!("Unexpected success on conversion to wrong type {cal:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_cal_to_t4() {
+        let ain_calibration = T4CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        #[allow(clippy::useless_conversion)]
+        match cal.try_into() {
+            Ok(Calibrations::T4Calibrations(cal)) => {
+                assert_eq!(cal.ain0_cal.offset, -10.532965);
+            }
+            cal => {
+                panic!("Unexpected conversion: {cal:?}")
+            }
+        }
+
+        let ain_calibration = T4CalibrationsBuilder::default().build().unwrap();
+        let cal: Calibrations = ain_calibration.into();
+        match std::convert::TryInto::<T7Calibrations>::try_into(cal) {
+            Err(_) => {}
+            Ok(cal) => {
+                panic!("Unexpected success on conversion to wrong type {cal:?}");
+            }
+        }
+    }
 }

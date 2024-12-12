@@ -11,20 +11,22 @@ name = "tokio_labjack"
 path = "src/lib.rs"
 
 [dependencies]
-async-trait = "*"
-bytes = "*"
-derive_builder = "*"
-enum_dispatch = "*"
-thiserror = "*"
-tokio = { version = "1.4", features = ["time", "rt", "net"] }
-tokio-modbus = { version = "*", default-features = false, features = ["tcp"] }
-tokio-util = "*"
-tracing = { version = "*", features = ["log"] }
+async-trait = "0.1"
+bytes = "1"
+derive_builder = "0.20"
+enum_dispatch = "0.3"
+thiserror = "1"
+tokio = { version = "1", features = ["time", "rt", "net"] }
+tokio-modbus = { version = "0.15", default-features = false, features = [
+    "tcp",
+] }
+tokio-util = "0.7"
+tracing = { version = "0.1", features = ["log"] }
 
 [dev-dependencies]
-env_logger = "*"
-mockall = "*"
-tokio = { version = "1.4", features = [
+env_logger = "0.11"
+mockall = "0.13"
+tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
     "time",

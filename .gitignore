@@ -1,4 +1,6 @@
 /target
+/coverage
+lcov.info
 .github
 .cargo-ok
 .DS_Store
