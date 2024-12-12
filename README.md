@@ -4,6 +4,20 @@
 [![Docs.rs](https://docs.rs/tokio_labjack/badge.svg)](https://docs.rs/tokio_labjack)
 [![CI](https://github.com/nschrading/tokio_labjack/workflows/CI/badge.svg)](https://github.com/nschrading/tokio_labjack/actions)
 
+`tokio_labjack` is a pure-rust async library to communicate with labjack T-series devices. It is completely standalone and does not require [LJM](https://support.labjack.com/docs/ljm-library-overview).
+
+It differentiates itself from `LJM` and other rust labjack crates in the following ways:
+
+* Pure rust. This is not a binding to `LJM`. Instead it uses the [direct modbus TCP](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp) interface of the labjack.
+
+* Asynchronous via the tokio runtime and the `tokio_modbus` crate.
+
+* Does not require `LJM` installed on your system. As long as you can establish a tcp connection to your labjack, you can run use this library to work with your labjack.
+
+* Strongly-typed. All registers (tags) that are available on the labjack have types and read/write specifications in this library. The rust compiler will prevent issues where, for example, you may be attempting to read a write-only register or get a floating point value from a u32 register.
+
+* TCP-only. This library does not support USB connections.
+
 ## Dev Pre-requisites
 
 To use the faster linker specified in `.cargo/config.toml`, install lld:
