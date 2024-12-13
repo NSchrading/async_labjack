@@ -8,15 +8,15 @@
 //! data to a file. Follow instructions here:
 //! https://support.labjack.com/docs/21-0-sd-card-t7-only-t-series-datasheet#id-21.0SDCard(T7Only)[T-SeriesDatasheet]-TestingthemicroSDCard
 
-use bytes::{BufMut, Bytes, BytesMut};
-use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::{
-    LabjackError, TokioLabjackError, FILE_IO_CLOSE, FILE_IO_DIR_CHANGE, FILE_IO_DIR_CURRENT,
+use async_labjack::client::LabjackClient;
+use async_labjack::{
+    Error, LabjackErrorCode, FILE_IO_CLOSE, FILE_IO_DIR_CHANGE, FILE_IO_DIR_CURRENT,
     FILE_IO_DIR_FIRST, FILE_IO_DIR_NEXT, FILE_IO_OPEN, FILE_IO_PATH_READ,
     FILE_IO_PATH_READ_LEN_BYTES, FILE_IO_PATH_WRITE, FILE_IO_PATH_WRITE_LEN_BYTES, FILE_IO_READ,
     FILE_IO_SIZE_BYTES,
 };
+use bytes::{BufMut, Bytes, BytesMut};
+use tokio::time::Duration;
 
 #[tokio::main()]
 async fn main() {
@@ -122,7 +122,7 @@ async fn main() {
             Err(e) => {
                 assert!(matches!(
                     e,
-                    TokioLabjackError::LabjackError(LabjackError::FileIoEndOfCwd)
+                    Error::LabjackErrorCode(LabjackErrorCode::FileIoEndOfCwd)
                 ));
                 break; // Exit the loop
             }

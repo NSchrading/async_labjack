@@ -2,11 +2,11 @@ use tokio::net::TcpStream;
 use tokio::signal;
 use tokio::sync::mpsc;
 use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::helpers::stream::process_stream;
-use tokio_labjack::labjack::StreamConfigBuilder;
-use tokio_labjack::STREAM_DEBUG_GET_SELF_INDEX;
+use async_labjack::client::LabjackClient;
+use async_labjack::client::LabjackInteractions;
+use async_labjack::helpers::stream::process_stream;
+use async_labjack::labjack::StreamConfigBuilder;
+use async_labjack::STREAM_DEBUG_GET_SELF_INDEX;
 
 #[tokio::main()]
 async fn main() {

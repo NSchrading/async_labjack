@@ -14,7 +14,7 @@ use crate::labjack::{
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::modbus_feedback::MBFB_FUNCTION_CODE;
 use crate::{
-    LabjackError, Result, TokioLabjackError, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
+    LabjackErrorCode, Result, Error, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
     LAST_ERR_DETAIL, PRODUCT_ID, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
     STREAM_DATA_CR, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX,
     STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
@@ -57,9 +57,9 @@ pub enum LabjackKind {
 /// # Examples
 ///
 /// ```no_run
-/// use tokio_labjack::client::LabjackClient;
+/// use async_labjack::client::LabjackClient;
 /// use tokio::time::Duration;
-/// use tokio_labjack::AIN0;
+/// use async_labjack::AIN0;
 ///
 /// #[tokio::main()]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -89,9 +89,9 @@ impl LabjackClient {
     pub async fn connect_socket(socket: TcpSocket, socket_addr: SocketAddr) -> Result<Self> {
         let transport = match socket.connect(socket_addr).await {
             Ok(res) => res,
-            // converting the io error to our TokioLabjackError
+            // converting the io error to our Error
             Err(e) => {
-                return Err(TokioLabjackError::TokioModbusError(
+                return Err(Error::TokioModbusError(
                     tokio_modbus::Error::Transport(e),
                 ));
             }
@@ -130,9 +130,9 @@ impl LabjackClient {
     pub async fn connect(socket_addr: SocketAddr) -> Result<Self> {
         let socket = match TcpSocket::new_v4() {
             Ok(res) => res,
-            // converting the io error to our TokioLabjackError
+            // converting the io error to our Error
             Err(e) => {
-                return Err(TokioLabjackError::TokioModbusError(
+                return Err(Error::TokioModbusError(
                     tokio_modbus::Error::Transport(e),
                 ));
             }
@@ -173,12 +173,12 @@ impl LabjackClient {
                 Some(num) => {
                     num_attempts = num;
                     if num_attempts >= max_attempts {
-                        return Err(TokioLabjackError::Other("Max attempts reached.".into()));
+                        return Err(Error::Other("Max attempts reached.".into()));
                     }
                 }
                 None => {
                     tracing::debug!("Max possible attempts reached");
-                    return Err(TokioLabjackError::Other(
+                    return Err(Error::Other(
                         "Max possible attempts reached.".into(),
                     ));
                 }
@@ -191,7 +191,7 @@ impl LabjackClient {
     pub async fn disconnect(&mut self) -> Result<()> {
         if let Err(e) = self.stop_stream().await {
             match e {
-                TokioLabjackError::TokioModbusError(tokio_modbus::Error::Transport(e))
+                Error::TokioModbusError(tokio_modbus::Error::Transport(e))
                     if e.kind() == io::ErrorKind::NotConnected =>
                 {
                     // We're already disconnected - no need to call it again.
@@ -206,7 +206,7 @@ impl LabjackClient {
             }
         }
         if let Err(e) = self.context.disconnect().await {
-            return Err(TokioLabjackError::TokioModbusError(
+            return Err(Error::TokioModbusError(
                 tokio_modbus::Error::Transport(e),
             ));
         }
@@ -221,7 +221,7 @@ impl LabjackClient {
             7.0 => Ok(LabjackKind::T7),
             8.0 => Ok(LabjackKind::T8),
             200.0 => Ok(LabjackKind::Digit),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Unknown labjack product id: {product_id:?}"
             ))),
         }
@@ -413,19 +413,19 @@ pub trait LabjackInteractions {
     ) -> Result<()>;
 
     /// If an error occurs when interacting with the labjack, this function can return additional
-    /// error details via the [`LAST_ERR_DETAIL`] register. Returns the error as a [`LabjackError`]
+    /// error details via the [`LAST_ERR_DETAIL`] register. Returns the error as a [`LabjackErrorCode`]
     /// enum.
-    async fn get_last_error_details(&mut self) -> Result<LabjackError>;
+    async fn get_last_error_details(&mut self) -> Result<LabjackErrorCode>;
 
-    /// Attempt to read [`LAST_ERR_DETAIL`], returning a [`TokioLabjackError`] with more error
-    /// details if possible. If [`LAST_ERR_DETAIL`] is [`LabjackError::LjSuccess`], then returns the
+    /// Attempt to read [`LAST_ERR_DETAIL`], returning a [`Error`] with more error
+    /// details if possible. If [`LAST_ERR_DETAIL`] is [`LabjackErrorCode::LjSuccess`], then returns the
     /// original error that prompted wanting more details. If an error occurs while trying to
     /// read [`LAST_ERR_DETAIL`], then this also returns the original error that prompted
     /// wanting more details.
     async fn detailed_error_from_exception_code(
         &mut self,
         error: ExceptionCode,
-    ) -> TokioLabjackError;
+    ) -> Error;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -499,7 +499,7 @@ impl LabjackInteractions for LabjackClient {
         )
         .await?
         {
-            // Convert tokio_modbus::Error to TokioLabjackError
+            // Convert tokio_modbus::Error to Error
             Ok(Ok(response)) => match response {
                 Response::Custom(function_code, words) => {
                     debug_assert_eq!(function_code, MBFB_FUNCTION_CODE);
@@ -516,19 +516,19 @@ impl LabjackInteractions for LabjackClient {
 
     async fn read_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<Bytes> {
         if !mbfb.write_addresses.is_empty() {
-            return Err(TokioLabjackError::Other(
+            return Err(Error::Other(
                 "Write addresses should be empty in a read mbfb".into(),
             ));
         }
 
         if !mbfb.write_counts.is_empty() {
-            return Err(TokioLabjackError::Other(
+            return Err(Error::Other(
                 "Write counts should be empty in a read mbfb".into(),
             ));
         }
 
         if !mbfb.write_data.is_empty() {
-            return Err(TokioLabjackError::Other(
+            return Err(Error::Other(
                 "Write data should be empty in a read mbfb".into(),
             ));
         }
@@ -598,7 +598,7 @@ impl LabjackInteractions for LabjackClient {
         let result_len = result.len();
         let expected_len = tags_to_read.len();
         if result_len != expected_len {
-            return Err(TokioLabjackError::Other(format!(
+            return Err(Error::Other(format!(
                 "Unexpected response length from read_tags: {}. Expected length of {}",
                 result_len, expected_len
             )));
@@ -624,7 +624,7 @@ impl LabjackInteractions for LabjackClient {
             .num_scans(num_scans)
             .build();
         config
-            .map_err(|e| TokioLabjackError::Other(format!("Unable to build stream config: {}", e)))
+            .map_err(|e| Error::Other(format!("Unable to build stream config: {}", e)))
     }
 
     async fn start_stream(
@@ -633,7 +633,7 @@ impl LabjackInteractions for LabjackClient {
         tags: Vec<ReadableLabjackTag>,
     ) -> Result<()> {
         if tags.len() != config.num_addresses as usize {
-            return Err(TokioLabjackError::Other("The number of provided tags to stream should equal num_addresses in stream config.".into()));
+            return Err(Error::Other("The number of provided tags to stream should equal num_addresses in stream config.".into()));
         }
 
         // Each tag address is 32 bits, which is 2 registers
@@ -642,7 +642,7 @@ impl LabjackInteractions for LabjackClient {
         // TODO: we can improve this by calling write_multiple_registers multiple times as
         // many times as needed. The actual limit is 128 tags streaming at once.
         if num_registers > 123 {
-            return Err(TokioLabjackError::Other(format!("Max number of registers we can write to is 123, but desired is {}. Reduce number of tags to stream.", num_registers)));
+            return Err(Error::Other(format!("Max number of registers we can write to is 123, but desired is {}. Reduce number of tags to stream.", num_registers)));
         }
 
         // write the config values
@@ -708,18 +708,18 @@ impl LabjackInteractions for LabjackClient {
         {
             Ok(res) => {
                 if res.len() != 1 {
-                    Err(TokioLabjackError::Other(format!(
+                    Err(Error::Other(format!(
                         "Unexpected result from starting stream: {:?}",
                         res
                     )))
                 } else if let HydratedTagValue::U32(val) = res[0] {
                     if val != 1 {
-                        Err(TokioLabjackError::Other("Unable to start stream!".into()))
+                        Err(Error::Other("Unable to start stream!".into()))
                     } else {
                         Ok(())
                     }
                 } else {
-                    Err(TokioLabjackError::Other(format!(
+                    Err(Error::Other(format!(
                         "Unexpected result from starting stream: {:?}",
                         res[0]
                     )))
@@ -742,25 +742,25 @@ impl LabjackInteractions for LabjackClient {
         match stream_disable_result {
             Ok(res) => {
                 if res.len() != 1 {
-                    Err(TokioLabjackError::Other(format!(
+                    Err(Error::Other(format!(
                         "Unexpected result from ending stream: {:?}",
                         res
                     )))
                 } else if let HydratedTagValue::U32(val) = res[0] {
                     if val != 0 {
-                        Err(TokioLabjackError::Other("Unable to end stream!".into()))
+                        Err(Error::Other("Unable to end stream!".into()))
                     } else {
                         Ok(())
                     }
                 } else {
-                    Err(TokioLabjackError::Other(format!(
+                    Err(Error::Other(format!(
                         "Unexpected result from ending stream: {:?}",
                         res[0]
                     )))
                 }
             }
             Err(e) => match e {
-                TokioLabjackError::LabjackError(LabjackError::StreamNotRunning) => {
+                Error::LabjackErrorCode(LabjackErrorCode::StreamNotRunning) => {
                     tracing::debug!("Stream was already stopped, no need to stop again.");
                     Ok(())
                 }
@@ -781,7 +781,7 @@ impl LabjackInteractions for LabjackClient {
         match self.labjack_kind {
             LabjackKind::T4 => {}
             _ => {
-                return Err(TokioLabjackError::Other(format!(
+                return Err(Error::Other(format!(
                     "{:?} not valid, expected {:?}",
                     self.labjack_kind,
                     LabjackKind::T4
@@ -803,7 +803,7 @@ impl LabjackInteractions for LabjackClient {
         let expected_len = 76;
 
         if result_len != expected_len {
-            return Err(TokioLabjackError::Other(format!(
+            return Err(Error::Other(format!(
                 "Expected to receive {} bytes of data, but received {} bytes instead.",
                 expected_len, result_len
             )));
@@ -878,7 +878,7 @@ impl LabjackInteractions for LabjackClient {
         match self.labjack_kind {
             LabjackKind::T7 => {}
             _ => {
-                return Err(TokioLabjackError::Other(format!(
+                return Err(Error::Other(format!(
                     "{:?} not valid, expected {:?}",
                     self.labjack_kind,
                     LabjackKind::T7
@@ -901,7 +901,7 @@ impl LabjackInteractions for LabjackClient {
         let expected_len = 164;
 
         if result_len != expected_len {
-            return Err(TokioLabjackError::Other(format!(
+            return Err(Error::Other(format!(
                 "Expected to receive {} bytes of data, but received {} bytes instead.",
                 expected_len, result_len
             )));
@@ -1009,13 +1009,13 @@ impl LabjackInteractions for LabjackClient {
 
     async fn write_mbfb(&mut self, mbfb: &mut ModbusFeedbackFrame<'_>) -> Result<()> {
         if !mbfb.read_addresses.is_empty() {
-            return Err(TokioLabjackError::Other(
+            return Err(Error::Other(
                 "Read addresses should be empty in a write mbfb".into(),
             ));
         }
 
         if !mbfb.read_counts.is_empty() {
-            return Err(TokioLabjackError::Other(
+            return Err(Error::Other(
                 "Read counts should be empty in a write mbfb".into(),
             ));
         }
@@ -1056,7 +1056,7 @@ impl LabjackInteractions for LabjackClient {
             .await
     }
 
-    async fn get_last_error_details(&mut self) -> Result<LabjackError> {
+    async fn get_last_error_details(&mut self) -> Result<LabjackErrorCode> {
         let error_code = LAST_ERR_DETAIL.read(self).await?;
         Ok(error_code.try_into()?)
     }
@@ -1064,17 +1064,17 @@ impl LabjackInteractions for LabjackClient {
     async fn detailed_error_from_exception_code(
         &mut self,
         error: ExceptionCode,
-    ) -> TokioLabjackError {
+    ) -> Error {
         if let Ok(better_error) = self.get_last_error_details().await {
             match better_error {
                 // sometimes the error details aren't filled in, in which case
                 // you get LjSuccess. In this case, we should fall back to the original
                 // error returned from tokio modbus
-                LabjackError::LjSuccess => TokioLabjackError::from(error),
-                _ => TokioLabjackError::from(better_error),
+                LabjackErrorCode::LjSuccess => Error::from(error),
+                _ => Error::from(better_error),
             }
         } else {
-            TokioLabjackError::from(error)
+            Error::from(error)
         }
     }
 }

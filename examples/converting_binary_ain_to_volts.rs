@@ -12,11 +12,11 @@
 //! See https://support.labjack.com/docs/9-0-vs-power-supply-t-series-datasheet for more details.
 
 use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
-use tokio_labjack::helpers::calibrations::T7Calibrations;
-use tokio_labjack::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
+use async_labjack::client::LabjackClient;
+use async_labjack::client::LabjackInteractions;
+use async_labjack::helpers::calibrations::t7_ain_binary_to_volts;
+use async_labjack::helpers::calibrations::T7Calibrations;
+use async_labjack::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
 
 #[tokio::main()]
 async fn main() {

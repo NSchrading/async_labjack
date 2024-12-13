@@ -2,7 +2,7 @@
 //! See [Labjack documentation](https://support.labjack.com/docs/20-0-internal-flash-t-series-datasheet)
 //! for more info.
 
-use crate::{Result, TokioLabjackError};
+use crate::{Result, Error};
 use derive_builder::Builder;
 
 /// The starting address of internal flash where the calibration constants reside.
@@ -31,12 +31,12 @@ impl From<T7Calibrations> for Calibrations {
 }
 
 impl TryInto<T7Calibrations> for Calibrations {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<T7Calibrations> {
         match self {
             Calibrations::T7Calibrations(cal) => Ok(cal),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected T7Calibrations, got {:?}",
                 self
             ))),
@@ -45,12 +45,12 @@ impl TryInto<T7Calibrations> for Calibrations {
 }
 
 impl TryInto<T4Calibrations> for Calibrations {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<T4Calibrations> {
         match self {
             Calibrations::T4Calibrations(cal) => Ok(cal),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected T4Calibrations, got {:?}",
                 self
             ))),
@@ -226,8 +226,8 @@ pub fn t7_ain_binary_to_volts(ain_binary: u32, ain_calibration: &T7AinCalibratio
 /// # Examples
 ///
 /// ```
-/// use tokio_labjack::helpers::calibrations::T4CalibrationsBuilder;
-/// use tokio_labjack::helpers::calibrations::ain_binary_to_volts;
+/// use async_labjack::helpers::calibrations::T4CalibrationsBuilder;
+/// use async_labjack::helpers::calibrations::ain_binary_to_volts;
 ///
 /// let calibrations = T4CalibrationsBuilder::default().build().unwrap();
 /// ain_binary_to_volts(65535, calibrations.ain0_cal.slope, calibrations.ain0_cal.offset);

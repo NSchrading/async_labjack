@@ -6,7 +6,7 @@ back_to_enum! {
     /// [`LAST_ERR_DETAIL`] tag
     #[derive(Debug, Error)]
     #[repr(u16)]
-    pub enum LabjackError {
+    pub enum LabjackErrorCode {
         #[error("LjSuccess")]
         LjSuccess = 0,
         #[error("FeatureNotImplemented")]

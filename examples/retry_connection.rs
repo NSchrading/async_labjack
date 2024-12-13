@@ -6,8 +6,8 @@
 //! Waits for ctrl+c to end otherwise.
 
 use tokio::time::{sleep, Duration};
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::TEST;
+use async_labjack::client::LabjackClient;
+use async_labjack::TEST;
 
 #[tokio::main()]
 async fn main() {

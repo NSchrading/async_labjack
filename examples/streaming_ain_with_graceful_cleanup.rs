@@ -16,20 +16,20 @@
 //! Note that DAC0 is 0-5V and the top range may be lower depending on your USB voltage.
 //! See https://support.labjack.com/docs/9-0-vs-power-supply-t-series-datasheet for more details.
 
+use async_labjack::client::LabjackClient;
+use async_labjack::client::LabjackInteractions;
+use async_labjack::helpers::calibrations::t7_ain_binary_to_volts;
+use async_labjack::helpers::calibrations::{T7AinCalibration, T7Calibrations};
+use async_labjack::helpers::stream::process_stream;
+use async_labjack::labjack::StreamConfigBuilder;
+use async_labjack::Error;
+use async_labjack::{AIN1, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX, TEST};
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::signal;
 use tokio::sync::mpsc;
 use tokio::sync::Notify;
 use tokio::time::{sleep, timeout, Duration};
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
-use tokio_labjack::helpers::calibrations::{T7AinCalibration, T7Calibrations};
-use tokio_labjack::helpers::stream::process_stream;
-use tokio_labjack::labjack::StreamConfigBuilder;
-use tokio_labjack::TokioLabjackError;
-use tokio_labjack::{AIN1, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX, TEST};
 use tokio_util::sync::CancellationToken;
 
 /// Process the received values and print to console.
@@ -149,32 +149,32 @@ async fn main() {
     // gets into a state where no further connection attempts can succeed until a powercycle.
     // This watchdog timer detects and corrects that issue by powercycling the labjack.
     // // disable watchdog while making changes.
-    // tokio_labjack::WATCHDOG_ENABLE_DEFAULT
+    // async_labjack::WATCHDOG_ENABLE_DEFAULT
     //     .write(&mut client, 0)
     //     .await
     //     .unwrap();
     // // set watchdog to 10s timeout
-    // tokio_labjack::WATCHDOG_TIMEOUT_S_DEFAULT
+    // async_labjack::WATCHDOG_TIMEOUT_S_DEFAULT
     //     .write(&mut client, 10)
     //     .await
     //     .unwrap();
     // // enable power reset on timeout
-    // tokio_labjack::WATCHDOG_RESET_ENABLE_DEFAULT
+    // async_labjack::WATCHDOG_RESET_ENABLE_DEFAULT
     //     .write(&mut client, 1)
     //     .await
     //     .unwrap();
     // // set the watchdog startup delay to 10s
-    // tokio_labjack::WATCHDOG_STARTUP_DELAY_S_DEFAULT
+    // async_labjack::WATCHDOG_STARTUP_DELAY_S_DEFAULT
     //     .write(&mut client, 10)
     //     .await
     //     .unwrap();
     // // enable watchdog
-    // tokio_labjack::WATCHDOG_ENABLE_DEFAULT
+    // async_labjack::WATCHDOG_ENABLE_DEFAULT
     //     .write(&mut client, 1)
     //     .await
     //     .unwrap();
     // // do an initial clear to start the watchdog timer
-    // tokio_labjack::WATCHDOG_STRICT_CLEAR
+    // async_labjack::WATCHDOG_STRICT_CLEAR
     //     .write(&mut client, 1)
     //     .await
     //     .unwrap();
@@ -266,9 +266,7 @@ async fn main() {
                 match e {
                     // Occurs when the receive end closes before the transmit end. Print the last
                     // value and end.
-                    TokioLabjackError::ProcessStreamSendError(
-                        tokio::sync::mpsc::error::SendError(val),
-                    ) => {
+                    Error::ProcessStreamSendError(tokio::sync::mpsc::error::SendError(val)) => {
                         // The value that the process_stream failed to send is returned in the SendError
                         let volt_value =
                             t7_ain_binary_to_volts(val as u32, &t7_cal.hs_gain_1_ain_cal);
@@ -277,7 +275,7 @@ async fn main() {
                     }
                     // If we get a TimeElapsed error, we probably lost connection to the labjack.
                     // In this case, we want to reattempt connection and keep processing.
-                    TokioLabjackError::TimeElapsed(_) => {
+                    Error::TimeElapsed(_) => {
                         stream = connect_to_stream_with_retries(
                             "192.168.42.100:702".parse().unwrap(),
                             Duration::from_secs(3),

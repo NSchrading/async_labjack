@@ -1,6 +1,6 @@
 //! Functions for constructing and interacting with the custom
 //! [Labjack Modbus Feedback function](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76))
-use crate::{Result, TokioLabjackError};
+use crate::{Result, Error};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::iter::zip;
 use tokio_modbus::Address;
@@ -27,9 +27,9 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack::{AIN0, AIN1, TEST_FLOAT32};
+    /// use async_labjack::{AIN0, AIN1, TEST_FLOAT32};
     /// use bytes::Bytes;
-    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use async_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will read AIN0 and AIN1 and write 5.4321 to TEST_FLOAT32.
     /// let mut mbfb = ModbusFeedbackFrame::new(
@@ -60,8 +60,8 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack::{AIN0, AIN1};
-    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use async_labjack::{AIN0, AIN1};
+    /// use async_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will read AIN0 and AIN1.
     /// let mut mbfb = ModbusFeedbackFrame::new_read_frame(
@@ -83,9 +83,9 @@ impl<'a> ModbusFeedbackFrame<'a> {
     ///
     /// # Examples
     /// ```
-    /// use tokio_labjack::{TEST_FLOAT32, TEST_INT32};
+    /// use async_labjack::{TEST_FLOAT32, TEST_INT32};
     /// use bytes::Bytes;
-    /// use tokio_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
+    /// use async_labjack::modbus_feedback::mbfb::{ModbusFeedbackFrame};
     ///
     /// // A feedback frame that will write 5.4321 to TEST_FLOAT32 and -314 to TEST_INT32.
     /// let mut mbfb = ModbusFeedbackFrame::new_write_frame(
@@ -129,7 +129,7 @@ impl<'a> ModbusFeedbackFrame<'a> {
                 1 => bytes.put_u16(self.write_data.get_u16()),
                 2 => bytes.put_u32(self.write_data.get_u32()),
                 _ => {
-                    return Err(TokioLabjackError::Other(
+                    return Err(Error::Other(
                         "There should never be a writeable tag with a register count not equal to 1 or 2."
                             .into(),
                     ))

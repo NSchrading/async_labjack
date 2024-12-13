@@ -65,15 +65,15 @@ impl fmt::Display for LabjackTag {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct LabjackError {
+struct LabjackErrorCode {
     number: u16,
     name: String,
     description: String,
 }
 
-impl LabjackError {
+impl LabjackErrorCode {
     fn new(number: u16, name: String, description: String) -> Self {
-        LabjackError {
+        LabjackErrorCode {
             number,
             name,
             description,
@@ -81,7 +81,7 @@ impl LabjackError {
     }
 }
 
-impl fmt::Display for LabjackError {
+impl fmt::Display for LabjackErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.description.len() > 0 {
             write!(
@@ -245,7 +245,7 @@ fn main() {
         writeln!(tags_file, "{}", labjack_tag).unwrap();
     }
 
-    let mut labjack_errors: Vec<LabjackError> = Vec::new();
+    let mut labjack_errors: Vec<LabjackErrorCode> = Vec::new();
     for error in errors {
         let error_name = screaming_snake_to_upper_camel_case(
             &error
@@ -280,7 +280,7 @@ fn main() {
         }
         .replace("\"", "");
 
-        let labjack_error = LabjackError::new(error_num, error_name, description);
+        let labjack_error = LabjackErrorCode::new(error_num, error_name, description);
         labjack_errors.push(labjack_error);
     }
 
@@ -293,7 +293,7 @@ back_to_enum! {
     /// [`LAST_ERR_DETAIL`] tag
     #[derive(Debug, Error)]
     #[repr(u16)]
-    pub enum LabjackError {
+    pub enum LabjackErrorCode {
 "#;
     write!(errors_file, "{}", enum_wrap).unwrap();
     for labjack_error in &labjack_errors {

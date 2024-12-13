@@ -4,10 +4,10 @@
 //! Streams at 1Hz, so we ensure that each SYSTEM_TIMER_20HZ value increases by 20.
 
 use tokio::time::{sleep, Duration};
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::labjack::StreamConfigBuilder;
-use tokio_labjack::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
+use async_labjack::client::LabjackClient;
+use async_labjack::client::LabjackInteractions;
+use async_labjack::labjack::StreamConfigBuilder;
+use async_labjack::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
 
 #[tokio::main()]
 async fn main() {

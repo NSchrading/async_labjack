@@ -1,13 +1,13 @@
 [package]
-description = "A pure rust interface to the LabJack T-series via Modbus TCP"
+description = "A pure rust, async interface to the LabJack T-series via Modbus TCP"
 edition = "2021"
 license = "MIT"
-name = "tokio_labjack"
-repository = "https://github.com/nschrading/tokio_labjack"
+name = "async_labjack"
+repository = "https://github.com/nschrading/async_labjack"
 version = "0.1.0"
 
 [lib]
-name = "tokio_labjack"
+name = "async_labjack"
 path = "src/lib.rs"
 
 [dependencies]

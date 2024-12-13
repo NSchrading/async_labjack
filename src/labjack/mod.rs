@@ -7,7 +7,7 @@ use crate::client::LabjackInteractions;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::Result;
-use crate::TokioLabjackError;
+use crate::Error;
 use bytes::{Buf, Bytes, BytesMut};
 use derive_builder::Builder;
 use enum_dispatch::enum_dispatch;
@@ -46,12 +46,12 @@ pub struct LabjackTag<T, R, W> {
 impl<T, R, W> LabjackTag<T, R, W> {
     /// Constructs a new [`LabjackTag<T, R, W>`] with an address. Normally you will not need
     /// to construct your own tag, and can instead use the pre-defined tags imported from
-    /// tokio_labjack_lib.
+    /// async_labjack_lib.
     ///
     /// # Examples
     ///
     /// ```
-    /// use tokio_labjack::labjack::{CanRead, CannotWrite, LabjackTag};
+    /// use async_labjack::labjack::{CanRead, CannotWrite, LabjackTag};
     ///
     /// let AIN0: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
     /// ```
@@ -458,12 +458,12 @@ pub enum HydratedTagValue {
 }
 
 impl TryInto<f32> for &HydratedTagValue {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<f32> {
         match self {
             &HydratedTagValue::F32(val) => Ok(val),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected F32, got {:?}",
                 self
             ))),
@@ -472,12 +472,12 @@ impl TryInto<f32> for &HydratedTagValue {
 }
 
 impl TryInto<i32> for &HydratedTagValue {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<i32> {
         match self {
             &HydratedTagValue::I32(val) => Ok(val),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected I32, got {:?}",
                 self
             ))),
@@ -486,12 +486,12 @@ impl TryInto<i32> for &HydratedTagValue {
 }
 
 impl TryInto<u64> for &HydratedTagValue {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<u64> {
         match self {
             &HydratedTagValue::U64(val) => Ok(val),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected U64, got {:?}",
                 self
             ))),
@@ -500,12 +500,12 @@ impl TryInto<u64> for &HydratedTagValue {
 }
 
 impl TryInto<u32> for &HydratedTagValue {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<u32> {
         match self {
             &HydratedTagValue::U32(val) => Ok(val),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected U32, got {:?}",
                 self
             ))),
@@ -514,12 +514,12 @@ impl TryInto<u32> for &HydratedTagValue {
 }
 
 impl TryInto<u16> for &HydratedTagValue {
-    type Error = TokioLabjackError;
+    type Error = Error;
 
     fn try_into(self) -> Result<u16> {
         match self {
             &HydratedTagValue::U16(val) => Ok(val),
-            _ => Err(TokioLabjackError::Other(format!(
+            _ => Err(Error::Other(format!(
                 "Expected U16, got {:?}",
                 self
             ))),

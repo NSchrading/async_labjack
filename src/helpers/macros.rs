@@ -11,12 +11,12 @@ macro_rules! back_to_enum {
         }
 
         impl std::convert::TryFrom<u16> for $name {
-            type Error = crate::TokioLabjackError;
+            type Error = crate::Error;
 
             fn try_from(v: u16) -> std::result::Result<Self, Self::Error> {
                 match v {
                     $(x if x == $name::$vname as u16 => Ok($name::$vname),)*
-                    _ => Err(crate::TokioLabjackError::UnknownStatusCode(v)),
+                    _ => Err(crate::Error::UnknownStatusCode(v)),
                 }
             }
         }

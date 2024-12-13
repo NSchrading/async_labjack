@@ -1,10 +1,10 @@
-# tokio_labjack
+# async_labjack
 
-[![Crates.io](https://img.shields.io/crates/v/tokio_labjack.svg)](https://crates.io/crates/tokio_labjack)
-[![Docs.rs](https://docs.rs/tokio_labjack/badge.svg)](https://docs.rs/tokio_labjack)
-[![CI](https://github.com/nschrading/tokio_labjack/workflows/CI/badge.svg)](https://github.com/nschrading/tokio_labjack/actions)
+[![Crates.io](https://img.shields.io/crates/v/async_labjack.svg)](https://crates.io/crates/async_labjack)
+[![Docs.rs](https://docs.rs/async_labjack/badge.svg)](https://docs.rs/async_labjack)
+[![CI](https://github.com/nschrading/async_labjack/workflows/CI/badge.svg)](https://github.com/nschrading/async_labjack/actions)
 
-`tokio_labjack` is a pure rust async library to communicate with labjack T-series devices. It is completely standalone and does not require [LJM](https://support.labjack.com/docs/ljm-library-overview).
+`async_labjack` is a pure rust async library to communicate with labjack T-series devices. It is completely standalone and does not require [LJM](https://support.labjack.com/docs/ljm-library-overview).
 
 It differentiates itself from `LJM` and other available labjack crates in the rust ecosystem in the following ways:
 
@@ -50,7 +50,7 @@ brew install llvm
 
 * Install the rust toolchain in order to have cargo installed by following
   [this](https://www.rust-lang.org/tools/install) guide.
-* run `cargo install tokio_labjack`
+* run `cargo install async_labjack`
 
 ## License
 

@@ -1,6 +1,6 @@
 use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::{ETHERNET_MAC, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32};
+use async_labjack::client::LabjackClient;
+use async_labjack::{ETHERNET_MAC, TEST, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32};
 
 #[tokio::main()]
 async fn main() {

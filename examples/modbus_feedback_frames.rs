@@ -1,10 +1,10 @@
 use bytes::Buf;
 use bytes::Bytes;
 use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::modbus_feedback::mbfb::ModbusFeedbackFrame;
-use tokio_labjack::{AIN0, TEST_FLOAT32, TEST_INT32};
+use async_labjack::client::LabjackClient;
+use async_labjack::client::LabjackInteractions;
+use async_labjack::modbus_feedback::mbfb::ModbusFeedbackFrame;
+use async_labjack::{AIN0, TEST_FLOAT32, TEST_INT32};
 
 #[tokio::main()]
 async fn main() {

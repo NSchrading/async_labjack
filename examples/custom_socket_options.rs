@@ -3,8 +3,8 @@
 
 use tokio::net::TcpSocket;
 use tokio::time::Duration;
-use tokio_labjack::client::LabjackClient;
-use tokio_labjack::TEST;
+use async_labjack::client::LabjackClient;
+use async_labjack::TEST;
 
 #[tokio::main()]
 async fn main() {

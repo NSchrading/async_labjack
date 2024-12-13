@@ -1,5 +1,5 @@
 pub use crate::labjack::all_tags::*;
-pub use crate::labjack::errors::LabjackError;
+pub use crate::labjack::errors::LabjackErrorCode;
 use thiserror::Error;
 
 pub mod client;
@@ -9,9 +9,9 @@ pub mod modbus_feedback;
 pub mod prelude;
 
 #[derive(Debug, Error)]
-pub enum TokioLabjackError {
+pub enum Error {
     #[error(transparent)]
-    LabjackError(#[from] LabjackError),
+    LabjackErrorCode(#[from] LabjackErrorCode),
     #[error(transparent)]
     TokioModbusExceptionCode(#[from] tokio_modbus::ExceptionCode),
     #[error("Unknown status code for enum: {0}")]
@@ -29,4 +29,4 @@ pub enum TokioLabjackError {
 }
 
 /// Specialized [`std::result::Result`] type
-pub type Result<T> = std::result::Result<T, TokioLabjackError>;
+pub type Result<T> = std::result::Result<T, Error>;

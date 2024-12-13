@@ -1,7 +1,7 @@
 //! Helper functions for interacting with stream data.
 //! See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
 
-use crate::{LabjackError, Result, TokioLabjackError};
+use crate::{LabjackErrorCode, Result, Error};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
@@ -9,11 +9,11 @@ use tokio::time::{timeout, Duration};
 
 /// Given a [`TcpStream`] receiving stream data, parse the data into u16s and
 /// transmit them to the provided tx [`tokio::sync::mpsc::Sender`]. If stream burst was configured
-/// then this function will eventually end once the [`LabjackError::StreamBurstComplete`] signal
+/// then this function will eventually end once the [`LabjackErrorCode::StreamBurstComplete`] signal
 /// is sent from the labjack. Otherwise this may run forever or until the receive end closes or an
 /// unexpected error occurs. This function will handle stream auto recovery if necessary,
-/// and end if [`LabjackError::StreamScanOverlap`], [`LabjackError::StreamAutoRecoverEndOverflow`],
-/// [`LabjackError::StreamBufferFull`], or a Timeout occurs. `timeout_duration` is used to set
+/// and end if [`LabjackErrorCode::StreamScanOverlap`], [`LabjackErrorCode::StreamAutoRecoverEndOverflow`],
+/// [`LabjackErrorCode::StreamBufferFull`], or a Timeout occurs. `timeout_duration` is used to set
 /// how long to wait for new data in the stream. If that duration elapses, the processing will end.
 pub async fn process_stream(
     mut stream: TcpStream,
@@ -26,7 +26,7 @@ pub async fn process_stream(
 
     loop {
         if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut header_buf)).await? {
-            return Err(TokioLabjackError::TokioModbusError(
+            return Err(Error::TokioModbusError(
                 tokio_modbus::Error::Transport(e),
             ));
         }
@@ -38,7 +38,7 @@ pub async fn process_stream(
 
         // sanity checks
         if function_code != 76 {
-            return Err(TokioLabjackError::Other(format!(
+            return Err(Error::Other(format!(
                 "Unexpected function_code: {}, expected to be 76.",
                 function_code
             )));
@@ -47,8 +47,8 @@ pub async fn process_stream(
         // todo: could check on the transaction id, making sure it's incrementing
         let status_code = u16::from_be_bytes([header_buf[12], header_buf[13]]);
         match status_code.try_into() {
-            Ok(LabjackError::LjSuccess) => {}
-            Ok(LabjackError::StreamAutoRecoverActive) => {
+            Ok(LabjackErrorCode::LjSuccess) => {}
+            Ok(LabjackErrorCode::StreamAutoRecoverActive) => {
                 #[cfg(debug_assertions)]
                 {
                     let backlog_bytes = u16::from_be_bytes([header_buf[10], header_buf[11]]);
@@ -59,7 +59,7 @@ pub async fn process_stream(
                     );
                 }
             }
-            Ok(LabjackError::StreamAutoRecoverEnd) => {
+            Ok(LabjackErrorCode::StreamAutoRecoverEnd) => {
                 #[cfg(debug_assertions)]
                 {
                     let num_scans_skipped = u16::from_be_bytes([header_buf[14], header_buf[15]]);
@@ -69,15 +69,15 @@ pub async fn process_stream(
                     );
                 }
             }
-            Ok(LabjackError::StreamScanOverlap) => {
-                return Err(TokioLabjackError::from(LabjackError::StreamScanOverlap));
+            Ok(LabjackErrorCode::StreamScanOverlap) => {
+                return Err(Error::from(LabjackErrorCode::StreamScanOverlap));
             }
-            Ok(LabjackError::StreamAutoRecoverEndOverflow) => {
-                return Err(TokioLabjackError::from(
-                    LabjackError::StreamAutoRecoverEndOverflow,
+            Ok(LabjackErrorCode::StreamAutoRecoverEndOverflow) => {
+                return Err(Error::from(
+                    LabjackErrorCode::StreamAutoRecoverEndOverflow,
                 ));
             }
-            Ok(LabjackError::StreamBurstComplete) => {
+            Ok(LabjackErrorCode::StreamBurstComplete) => {
                 let num_samples_remaining = u16::from_be_bytes([header_buf[14], header_buf[15]]);
                 tracing::debug!(
                     "Burst stream mode ended successfully. Remaining samples to read: {}",
@@ -87,7 +87,7 @@ pub async fn process_stream(
                 let mut data_buf = vec![0; num_bytes_remaining as usize];
 
                 if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
-                    return Err(TokioLabjackError::TokioModbusError(
+                    return Err(Error::TokioModbusError(
                         tokio_modbus::Error::Transport(e),
                     ));
                 }
@@ -101,17 +101,17 @@ pub async fn process_stream(
                 }
                 return Ok(());
             }
-            Ok(LabjackError::StreamBufferFull) => {
-                return Err(TokioLabjackError::from(LabjackError::StreamBufferFull));
+            Ok(LabjackErrorCode::StreamBufferFull) => {
+                return Err(Error::from(LabjackErrorCode::StreamBufferFull));
             }
-            // If we get a different status_code that is parseable into a LabjackError,
+            // If we get a different status_code that is parseable into a LabjackErrorCode,
             // this is an unexpected error. We only expect to get the STREAM_* status codes here
             Ok(_) => {
                 tracing::debug!(
                     "Received unexpected status code from stream: {}",
                     status_code
                 );
-                return Err(TokioLabjackError::UnknownStatusCode(status_code));
+                return Err(Error::UnknownStatusCode(status_code));
             }
             Err(e) => {
                 return Err(e);
@@ -128,7 +128,7 @@ pub async fn process_stream(
         let mut data_buf = vec![0; num_bytes as usize];
 
         if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
-            return Err(TokioLabjackError::TokioModbusError(
+            return Err(Error::TokioModbusError(
                 tokio_modbus::Error::Transport(e),
             ));
         }
