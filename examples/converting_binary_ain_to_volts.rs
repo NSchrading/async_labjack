@@ -11,12 +11,12 @@
 //! Note that DAC0 is 0-5V and the top range may be lower depending on your USB voltage.
 //! See https://support.labjack.com/docs/9-0-vs-power-supply-t-series-datasheet for more details.
 
-use tokio::time::Duration;
 use async_labjack::client::LabjackClient;
 use async_labjack::client::LabjackInteractions;
 use async_labjack::helpers::calibrations::t7_ain_binary_to_volts;
 use async_labjack::helpers::calibrations::T7Calibrations;
 use async_labjack::{AIN1, AIN1_BINARY, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX};
+use tokio::time::Duration;
 
 #[tokio::main()]
 async fn main() {
@@ -25,7 +25,7 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+    let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
 
@@ -33,11 +33,11 @@ async fn main() {
     client.stop_stream().await.unwrap();
 
     // Make sure AIN1 range is +/- 10V. We use this calibration mode when converting binary to volts
-    AIN1_RANGE.write(&mut client, 0.0).await.unwrap();
+    AIN1_RANGE.write(client, 0.0).await.unwrap();
     // Make sure AIN1 negative channel is ground (single ended)
-    AIN1_NEGATIVE_CH.write(&mut client, 199).await.unwrap();
+    AIN1_NEGATIVE_CH.write(client, 199).await.unwrap();
     // Make sure resolution index is default
-    AIN1_RESOLUTION_INDEX.write(&mut client, 0).await.unwrap();
+    AIN1_RESOLUTION_INDEX.write(client, 0).await.unwrap();
 
     // // We need the calibration constants in order to convert the binary values to volts.
     let t7_cal: T7Calibrations = client

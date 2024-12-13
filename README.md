@@ -20,6 +20,8 @@ It differentiates itself from `LJM` and other available labjack crates in the ru
 
 ## Example
 
+Many complete examples, including for streaming, can be found in the [examples] directory.
+
 ```rust
 use async_labjack::client::LabjackClient;
 use async_labjack::{TEST, TEST_FLOAT32, TEST_INT32};
@@ -27,13 +29,13 @@ use async_labjack::{TEST, TEST_FLOAT32, TEST_INT32};
 // Change to the address of your labjack
 let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
     .await
     .unwrap();
 
 // Read a single LabJack tag.
 // Ensure the test value is always 0x00112233
-let value = TEST.read(&mut client).await.unwrap();
+let value = TEST.read(client).await.unwrap();
 assert_eq!(value, 0x00112233);
 
 // Read and write multiple tags at once.
@@ -60,33 +62,6 @@ assert_eq!(float32_val, -98765.43);
 
 let int32_val: i32 = (&results[1]).try_into().unwrap();
 assert_eq!(int32_val, -987654);
-
-// Stream data
-const NUM_SCANS: u32 = 300;
-const NUM_TAGS: u32 = 4;
-const TOTAL_SAMPLES_EXPECTED: u32 = NUM_SCANS * NUM_TAGS;
-let new_stream_config = StreamConfigBuilder::default()
-    .num_addresses(NUM_TAGS)
-    .scan_rate(1000.0)
-    .num_scans(NUM_SCANS)
-    .auto_target(16)
-    .build()
-    .unwrap();
-
-client
-    .start_stream(
-        &new_stream_config,
-        vec![
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-            STREAM_DEBUG_GET_SELF_INDEX.into(),
-        ],
-    )
-    .await
-    .unwrap();
-
-// See examples/ dir for more complete streaming examples and others
 
 client.disconnect().await.unwrap();
 ```

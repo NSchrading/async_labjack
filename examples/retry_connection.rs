@@ -5,9 +5,9 @@
 //!
 //! Waits for ctrl+c to end otherwise.
 
-use tokio::time::{sleep, Duration};
 use async_labjack::client::LabjackClient;
 use async_labjack::TEST;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main()]
 async fn main() {
@@ -16,23 +16,23 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = LabjackClient::connect_with_retries(socket_addr, Duration::from_secs(1), 20)
-        .await
-        .unwrap();
-    client.command_response_timeout = Duration::from_millis(500);
-
     let read_task = tokio::spawn(async move {
+        let client =
+            &mut LabjackClient::connect_with_retries(socket_addr, Duration::from_secs(3), 20)
+                .await
+                .unwrap();
+        client.command_response_timeout = Duration::from_millis(500);
         loop {
-            match TEST.read(&mut client).await {
+            match TEST.read(client).await {
                 Ok(value) => {
                     assert_eq!(value, 0x00112233);
                     println!("Got {value:?}");
                 }
                 Err(e) => {
                     println!("Error occurred reading: {e}");
-                    client = LabjackClient::connect_with_retries(
+                    *client = LabjackClient::connect_with_retries(
                         socket_addr,
-                        Duration::from_secs(1),
+                        Duration::from_secs(3),
                         20,
                     )
                     .await

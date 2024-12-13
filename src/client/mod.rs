@@ -14,7 +14,7 @@ use crate::labjack::{
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
 use crate::modbus_feedback::MBFB_FUNCTION_CODE;
 use crate::{
-    LabjackErrorCode, Result, Error, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
+    Error, LabjackErrorCode, Result, INTERNAL_FLASH_READ, INTERNAL_FLASH_READ_POINTER,
     LAST_ERR_DETAIL, PRODUCT_ID, STREAM_AUTO_TARGET, STREAM_BUFFER_SIZE_BYTES, STREAM_DATATYPE,
     STREAM_DATA_CR, STREAM_ENABLE, STREAM_NUM_ADDRESSES, STREAM_NUM_SCANS, STREAM_RESOLUTION_INDEX,
     STREAM_SAMPLES_PER_PACKET, STREAM_SCANLIST_ADDRESS0, STREAM_SCANRATE_HZ, STREAM_SETTLING_US,
@@ -91,9 +91,7 @@ impl LabjackClient {
             Ok(res) => res,
             // converting the io error to our Error
             Err(e) => {
-                return Err(Error::TokioModbusError(
-                    tokio_modbus::Error::Transport(e),
-                ));
+                return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
             }
         };
         let context = tcp::attach(transport);
@@ -132,9 +130,7 @@ impl LabjackClient {
             Ok(res) => res,
             // converting the io error to our Error
             Err(e) => {
-                return Err(Error::TokioModbusError(
-                    tokio_modbus::Error::Transport(e),
-                ));
+                return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
             }
         };
 
@@ -166,7 +162,7 @@ impl LabjackClient {
                     return Ok(client);
                 }
                 Err(e) => {
-                    tracing::debug!("Error connecting to LabjackClient: {:?}", e);
+                    tracing::error!("Error connecting to LabjackClient: {:?}", e);
                 }
             }
             match num_attempts.checked_add(1) {
@@ -178,9 +174,7 @@ impl LabjackClient {
                 }
                 None => {
                     tracing::debug!("Max possible attempts reached");
-                    return Err(Error::Other(
-                        "Max possible attempts reached.".into(),
-                    ));
+                    return Err(Error::Other("Max possible attempts reached.".into()));
                 }
             }
         }
@@ -206,9 +200,7 @@ impl LabjackClient {
             }
         }
         if let Err(e) = self.context.disconnect().await {
-            return Err(Error::TokioModbusError(
-                tokio_modbus::Error::Transport(e),
-            ));
+            return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
         }
         Ok(())
     }
@@ -422,10 +414,7 @@ pub trait LabjackInteractions {
     /// original error that prompted wanting more details. If an error occurs while trying to
     /// read [`LAST_ERR_DETAIL`], then this also returns the original error that prompted
     /// wanting more details.
-    async fn detailed_error_from_exception_code(
-        &mut self,
-        error: ExceptionCode,
-    ) -> Error;
+    async fn detailed_error_from_exception_code(&mut self, error: ExceptionCode) -> Error;
 }
 
 /// Take the given Bytes and convert them to HydratedTagValue based on the provided
@@ -623,8 +612,7 @@ impl LabjackInteractions for LabjackClient {
             .auto_target(auto_target)
             .num_scans(num_scans)
             .build();
-        config
-            .map_err(|e| Error::Other(format!("Unable to build stream config: {}", e)))
+        config.map_err(|e| Error::Other(format!("Unable to build stream config: {}", e)))
     }
 
     async fn start_stream(
@@ -1061,10 +1049,7 @@ impl LabjackInteractions for LabjackClient {
         Ok(error_code.try_into()?)
     }
 
-    async fn detailed_error_from_exception_code(
-        &mut self,
-        error: ExceptionCode,
-    ) -> Error {
+    async fn detailed_error_from_exception_code(&mut self, error: ExceptionCode) -> Error {
         if let Ok(better_error) = self.get_last_error_details().await {
             match better_error {
                 // sometimes the error details aren't filled in, in which case

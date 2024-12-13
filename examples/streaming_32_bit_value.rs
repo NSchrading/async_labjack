@@ -3,11 +3,11 @@
 //!
 //! Streams at 1Hz, so we ensure that each SYSTEM_TIMER_20HZ value increases by 20.
 
-use tokio::time::{sleep, Duration};
 use async_labjack::client::LabjackClient;
 use async_labjack::client::LabjackInteractions;
 use async_labjack::labjack::StreamConfigBuilder;
 use async_labjack::{STREAM_DATA_CAPTURE_16, SYSTEM_TIMER_20HZ};
+use tokio::time::{sleep, Duration};
 
 #[tokio::main()]
 async fn main() {
@@ -16,7 +16,7 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+    let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
 

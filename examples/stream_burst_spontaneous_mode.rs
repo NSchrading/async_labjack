@@ -1,12 +1,12 @@
-use tokio::net::TcpStream;
-use tokio::signal;
-use tokio::sync::mpsc;
-use tokio::time::Duration;
 use async_labjack::client::LabjackClient;
 use async_labjack::client::LabjackInteractions;
 use async_labjack::helpers::stream::process_stream;
 use async_labjack::labjack::StreamConfigBuilder;
 use async_labjack::STREAM_DEBUG_GET_SELF_INDEX;
+use tokio::net::TcpStream;
+use tokio::signal;
+use tokio::sync::mpsc;
+use tokio::time::Duration;
 
 #[tokio::main()]
 async fn main() {
@@ -15,7 +15,7 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+    let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
 

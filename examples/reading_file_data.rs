@@ -25,7 +25,7 @@ async fn main() {
     // Change to the address of your labjack
     let socket_addr = "192.168.42.100:502".parse().unwrap();
 
-    let mut client = LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
+    let client = &mut LabjackClient::connect_with_timeout(socket_addr, Duration::from_millis(3000))
         .await
         .unwrap();
 
@@ -33,37 +33,37 @@ async fn main() {
     // First, we want to switch to the cwd of /. We need to write the number of bytes
     // of that path to FILE_IO_PATH_WRITE_LEN_BYTES.
     FILE_IO_PATH_WRITE_LEN_BYTES
-        .write(&mut client, current_working_directory.len() as u32)
+        .write(client, current_working_directory.len() as u32)
         .await
         .unwrap();
     // Then we need to write that path to FILE_IO_PATH_WRITE
     FILE_IO_PATH_WRITE
-        .write(&mut client, current_working_directory)
+        .write(client, current_working_directory)
         .await
         .unwrap();
     // Then we trigger the switch to that directory by writing to FILE_IO_DIR_CHANGE
-    FILE_IO_DIR_CHANGE.write(&mut client, 1).await.unwrap();
+    FILE_IO_DIR_CHANGE.write(client, 1).await.unwrap();
 
     // Get current working directory
-    FILE_IO_DIR_CURRENT.write(&mut client, 1).await.unwrap();
-    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut client).await.unwrap();
+    FILE_IO_DIR_CURRENT.write(client, 1).await.unwrap();
+    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(client).await.unwrap();
     println!("reading num_bytes: {num_bytes:?}");
     let cwd = FILE_IO_PATH_READ
-        .read_string(&mut client, num_bytes)
+        .read_string(client, num_bytes)
         .await
         .unwrap();
     println!("The current working directory is '{cwd:?}'");
     assert_eq!(cwd, "/");
 
     // Read the current working directory
-    FILE_IO_DIR_FIRST.write(&mut client, 1).await.unwrap();
-    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(&mut client).await.unwrap();
+    FILE_IO_DIR_FIRST.write(client, 1).await.unwrap();
+    let num_bytes = FILE_IO_PATH_READ_LEN_BYTES.read(client).await.unwrap();
     println!("reading num_bytes: {num_bytes:?}");
     let path = FILE_IO_PATH_READ
-        .read_string(&mut client, num_bytes)
+        .read_string(client, num_bytes)
         .await
         .unwrap();
-    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut client).await.unwrap();
+    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(client).await.unwrap();
     println!("path: {path:?}");
     println!("file byte size: {num_file_content_bytes:?}");
 
@@ -80,42 +80,39 @@ async fn main() {
 
     // First, write the number of bytes of the file path you wish to access
     FILE_IO_PATH_WRITE_LEN_BYTES
-        .write(&mut client, fname_num_bytes as u32)
+        .write(client, fname_num_bytes as u32)
         .await
         .unwrap();
     println!("wrote fname_num_bytes: {fname_num_bytes:?}");
 
     // Then write the file path to FILE_IO_PATH_WRITE
-    FILE_IO_PATH_WRITE
-        .write(&mut client, filename)
-        .await
-        .unwrap();
+    FILE_IO_PATH_WRITE.write(client, filename).await.unwrap();
     println!("wrote filename to FILE_IO_PATH_WRITE");
 
     // Then write a value to FILE_IO_OPEN to open the file
-    FILE_IO_OPEN.write(&mut client, 1).await.unwrap();
+    FILE_IO_OPEN.write(client, 1).await.unwrap();
     println!("wrote 1 to FILE_IO_OPEN");
 
     // Then read from FILE_IO_SIZE_BYTES to get how many bytes the file is
-    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(&mut client).await.unwrap();
+    let num_file_content_bytes = FILE_IO_SIZE_BYTES.read(client).await.unwrap();
     println!("number of bytes to read from file: {num_file_content_bytes:?}");
 
     // Read the data from the file
     let file_data = FILE_IO_READ
-        .read_file(&mut client, num_file_content_bytes)
+        .read_file(client, num_file_content_bytes)
         .await
         .unwrap();
     println!("file_data: {file_data:?}");
 
     // Finally, close the file.
-    FILE_IO_CLOSE.write(&mut client, 1).await.unwrap();
+    FILE_IO_CLOSE.write(client, 1).await.unwrap();
 
     // Instead of doing the above where we read the first file we found,
     // if you want to iterate until you find the file you wish to read, you must
     // write to FILE_IO_DIR_NEXT to go to the next path, then read FILE_IO_PATH_READ again. You can
     // do this repeatedly until it returns a FileIoEndOfCwd error.
     loop {
-        match FILE_IO_DIR_NEXT.write(&mut client, 1).await {
+        match FILE_IO_DIR_NEXT.write(client, 1).await {
             Ok(_) => {
                 // read FILE_IO_PATH_READ
             }

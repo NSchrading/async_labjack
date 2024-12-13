@@ -145,9 +145,9 @@ async fn main() {
     // communication from the host application within a timeout.
     // See https://support.labjack.com/docs/23-0-watchdog-t-series-datasheet for more details.
     // Note: Don't write to these registers often, as it can wear out system flash.
-    // I have found that in some cases when ethernet communication is lost, the labjack
-    // gets into a state where no further connection attempts can succeed until a powercycle.
-    // This watchdog timer detects and corrects that issue by powercycling the labjack.
+    // I have found that in some cases when ethernet communication is lost while streaming, the
+    // labjack gets into a state where no further connection attempts can succeed until a
+    // powercycle. This watchdog timer detects and corrects that issue by powercycling the labjack.
     // // disable watchdog while making changes.
     // async_labjack::WATCHDOG_ENABLE_DEFAULT
     //     .write(&mut client, 0)
