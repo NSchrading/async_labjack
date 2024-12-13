@@ -15,7 +15,7 @@ async-trait = "0.1"
 bytes = "1"
 derive_builder = "0.20"
 enum_dispatch = "0.3"
-thiserror = "1"
+thiserror = "2"
 tokio = { version = "1", features = ["time", "rt", "net"] }
 tokio-modbus = { git = "https://github.com/slowtec/tokio-modbus.git", rev = "3926f305edcdb1cf1ad335aef83ad73c750ba573", default-features = false, features = [
     "tcp",
