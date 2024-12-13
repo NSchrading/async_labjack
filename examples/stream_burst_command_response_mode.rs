@@ -1,7 +1,7 @@
 use tokio::time::{sleep, Duration};
 use tokio_labjack::client::LabjackClient;
 use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::labjack::StreamConfigBuilder;
 use tokio_labjack::STREAM_DEBUG_GET_SELF_INDEX;
 
 #[tokio::main()]

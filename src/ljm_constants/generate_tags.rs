@@ -135,44 +135,15 @@ fn main() {
         .as_array()
         .expect("The 'errors' key should be an array.");
 
-    let mut lib_file = File::create("src/lib.rs").unwrap();
+    let mut tags_file = File::create("src/labjack/all_tags.rs").unwrap();
+    let mut errors_file = File::create("src/labjack/errors.rs").unwrap();
 
-    let header = r#"
-use crate::helpers::macros::back_to_enum;
-use crate::labjack_tag::{{CanRead, CanWrite, CannotRead, CannotWrite, LabjackTag}};
-use bytes::Bytes;
-use thiserror::Error;
-
-pub mod client;
-pub mod helpers;
-pub mod labjack_tag;
-pub mod modbus_feedback;
-pub mod prelude;
-
-#[derive(Debug, Error)]
-pub enum TokioLabjackError {
-    #[error(transparent)]
-    LabjackError(#[from] LabjackError),
-    #[error(transparent)]
-    TokioModbusExceptionCode(#[from] tokio_modbus::ExceptionCode),
-    #[error("Unknown status code for enum: {0}")]
-    UnknownStatusCode(u16),
-    #[error(transparent)]
-    TokioModbusError(#[from] tokio_modbus::Error),
-    #[error(transparent)]
-    TimeElapsed(#[from] tokio::time::error::Elapsed),
-    #[error(transparent)]
-    Utf8Error(#[from] std::str::Utf8Error),
-    #[error(transparent)]
-    ProcessStreamSendError(#[from] tokio::sync::mpsc::error::SendError<u16>),
-    #[error("{0}")]
-    Other(String),
-}
-
-/// Specialized [`std::result::Result`] type
-pub type Result<T> = std::result::Result<T, TokioLabjackError>;
-    "#;
-    writeln!(lib_file, "{}", header).unwrap();
+    writeln!(tags_file, "use crate::prelude::*;").unwrap();
+    writeln!(tags_file, "use bytes::Bytes;").unwrap();
+    writeln!(tags_file, "").unwrap();
+    writeln!(errors_file, "use crate::helpers::macros::back_to_enum;").unwrap();
+    writeln!(errors_file, "use thiserror::Error;").unwrap();
+    writeln!(errors_file, "").unwrap();
 
     // I define these as LabjackTag<T, R, W>s because these are simple 2 byte structs vs
     // the larger WritableLabjackTag / ReadableLabjackTag enums. This means users need to use
@@ -271,7 +242,7 @@ pub type Result<T> = std::result::Result<T, TokioLabjackError>;
 
     labjack_tags.sort();
     for labjack_tag in &labjack_tags {
-        writeln!(lib_file, "{}", labjack_tag).unwrap();
+        writeln!(tags_file, "{}", labjack_tag).unwrap();
     }
 
     let mut labjack_errors: Vec<LabjackError> = Vec::new();
@@ -314,7 +285,7 @@ pub type Result<T> = std::result::Result<T, TokioLabjackError>;
     }
 
     labjack_errors.sort();
-    writeln!(lib_file).unwrap();
+    //writeln!(lib_file).unwrap();
 
     let enum_wrap = r#"
 back_to_enum! {
@@ -324,10 +295,10 @@ back_to_enum! {
     #[repr(u16)]
     pub enum LabjackError {
 "#;
-    write!(lib_file, "{}", enum_wrap).unwrap();
+    write!(errors_file, "{}", enum_wrap).unwrap();
     for labjack_error in &labjack_errors {
-        writeln!(lib_file, "{}", labjack_error).unwrap();
+        writeln!(errors_file, "{}", labjack_error).unwrap();
     }
-    writeln!(lib_file, "\t}}").unwrap();
-    writeln!(lib_file, "}}").unwrap();
+    writeln!(errors_file, "\t}}").unwrap();
+    writeln!(errors_file, "}}").unwrap();
 }

@@ -1,4 +1,4 @@
-//! The client used to interact with labjacks for reading and writing [`crate::labjack_tag::LabjackTag<T, R, W>`]s or
+//! The client used to interact with labjacks for reading and writing [`crate::labjack::LabjackTag<T, R, W>`]s or
 //! [`ModbusFeedbackFrame`]s.
 use crate::helpers::bit_manipulation::u8_to_u16_vec;
 use crate::helpers::calibrations::{
@@ -7,7 +7,7 @@ use crate::helpers::calibrations::{
     T7AinCalibrationBuilder, T7Calibrations, T7CalibrationsBuilder, T7DacCalibrationBuilder,
     TemperatureCalibrationBuilder, CAL_CONST_STARTING_ADDRESS,
 };
-use crate::labjack_tag::{
+use crate::labjack::{
     Addressable, HydratedTagValue, Readable, ReadableLabjackTag, StreamConfig, StreamConfigBuilder,
     WritableLabjackTag,
 };
@@ -1083,9 +1083,9 @@ impl LabjackInteractions for LabjackClient {
 mod tests {
     use super::*;
     use crate::helpers::bit_manipulation::be_bytes_to_u16_array;
-    use crate::labjack_tag::StreamConfig;
-    use crate::labjack_tag::{Addressable, HydratedTagValue, ReadableLabjackTag};
-    use crate::labjack_tag::{CanRead, CanWrite, CannotWrite, LabjackTag};
+    use crate::labjack::StreamConfig;
+    use crate::labjack::{Addressable, HydratedTagValue, ReadableLabjackTag};
+    use crate::labjack::{CanRead, CanWrite, CannotWrite, LabjackTag};
     use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
     use crate::modbus_feedback::MBFB_FUNCTION_CODE;
     use crate::{

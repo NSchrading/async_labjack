@@ -1,4 +1,6 @@
 //! structs and traits for Labjack Tags.
+pub mod all_tags;
+pub mod errors;
 
 use crate::client::LabjackClient;
 use crate::client::LabjackInteractions;
@@ -49,7 +51,7 @@ impl<T, R, W> LabjackTag<T, R, W> {
     /// # Examples
     ///
     /// ```
-    /// use tokio_labjack::labjack_tag::{CanRead, CannotWrite, LabjackTag};
+    /// use tokio_labjack::labjack::{CanRead, CannotWrite, LabjackTag};
     ///
     /// let AIN0: LabjackTag<f32, CanRead, CannotWrite> = LabjackTag::new(0);
     /// ```

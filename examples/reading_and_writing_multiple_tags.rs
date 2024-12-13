@@ -1,7 +1,7 @@
 use tokio::time::Duration;
 use tokio_labjack::client::LabjackClient;
 use tokio_labjack::client::LabjackInteractions;
-use tokio_labjack::labjack_tag::HydratedTagValue;
+use tokio_labjack::labjack::HydratedTagValue;
 use tokio_labjack::{ETHERNET_MAC, TEST_FLOAT32, TEST_INT32, TEST_UINT16, TEST_UINT32};
 
 #[tokio::main()]

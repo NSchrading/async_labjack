@@ -17,7 +17,7 @@ derive_builder = "0.20"
 enum_dispatch = "0.3"
 thiserror = "1"
 tokio = { version = "1", features = ["time", "rt", "net"] }
-tokio-modbus = { version = "0.15", default-features = false, features = [
+tokio-modbus = { git = "https://github.com/slowtec/tokio-modbus.git", rev = "3926f305edcdb1cf1ad335aef83ad73c750ba573", default-features = false, features = [
     "tcp",
 ] }
 tokio-util = "0.7"

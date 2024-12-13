@@ -27,7 +27,7 @@ use tokio_labjack::client::LabjackInteractions;
 use tokio_labjack::helpers::calibrations::t7_ain_binary_to_volts;
 use tokio_labjack::helpers::calibrations::{T7AinCalibration, T7Calibrations};
 use tokio_labjack::helpers::stream::process_stream;
-use tokio_labjack::labjack_tag::StreamConfigBuilder;
+use tokio_labjack::labjack::StreamConfigBuilder;
 use tokio_labjack::TokioLabjackError;
 use tokio_labjack::{AIN1, AIN1_NEGATIVE_CH, AIN1_RANGE, AIN1_RESOLUTION_INDEX, TEST};
 use tokio_util::sync::CancellationToken;
