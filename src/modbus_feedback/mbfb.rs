@@ -1,6 +1,6 @@
 //! Functions for constructing and interacting with the custom
 //! [Labjack Modbus Feedback function](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp#ProtocolDetails[DirectModbusTCP]-ModbusFeedback(MBFB,function#76))
-use crate::{Result, Error};
+use crate::{Error, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::iter::zip;
 use tokio_modbus::Address;

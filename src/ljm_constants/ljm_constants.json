@@ -4551,7 +4551,7 @@
                 "CONFIG",
                 "AIN"
             ],
-            "description": "Sets or reads the ON/OFF state of individual AIN channels. This register is a bitmask where each bit represents a channel. A 1 = on, 0 = off. Only available certain devices."
+            "description": "Sets or reads the ON/OFF state of individual AIN channels. This register is a bitmask where each bit represents a channel. A 1 = on, 0 = off. Only available on certain devices."
         },
         {
             "address": 48050,
@@ -9588,6 +9588,11 @@
             "description": "The specified TX buffer size is too large."
         },
         {
+            "error": 2712,
+            "string": "SPI_NULL_BUFFER",
+            "description": "SPI buffer has not been initialized, please set SPI_NUM_BYTES before running SPI_GO."
+        },
+        {
             "error": 2720,
             "string": "I2C_BUS_BUSY",
             "description": "One or both of the I2C lines are held low. Check hardware and reset the bus."
@@ -10233,6 +10238,7 @@
         "2024.07.15.A   Updated STREAM_CLOCK_SOURCE to include ESS options.",
         "2024.08.07.A   Added a TDAC_NOT_INITIALIZED error code.",
         "2024.11.11.A   Updated the definitions of the _RANGE registers.",
+        "2024.12.04.A   Fixed a grammatical issue.",
         "See https://github.com/labjack/ljm_constants for further comments.",
         "End Of Comments"
     ]

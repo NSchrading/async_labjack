@@ -1,4 +1,4 @@
-//! structs and traits for Labjack Tags.
+//! structs, traits, and enums for LabJack Tags and error codes.
 pub mod all_tags;
 pub mod errors;
 
@@ -6,8 +6,8 @@ use crate::client::LabjackClient;
 use crate::client::LabjackInteractions;
 use crate::helpers::bit_manipulation::{be_bytes_to_u16_array, u8_to_u16_vec};
 use crate::modbus_feedback::mbfb::ModbusFeedbackFrame;
-use crate::Result;
 use crate::Error;
+use crate::Result;
 use bytes::{Buf, Bytes, BytesMut};
 use derive_builder::Builder;
 use enum_dispatch::enum_dispatch;
@@ -463,10 +463,7 @@ impl TryInto<f32> for &HydratedTagValue {
     fn try_into(self) -> Result<f32> {
         match self {
             &HydratedTagValue::F32(val) => Ok(val),
-            _ => Err(Error::Other(format!(
-                "Expected F32, got {:?}",
-                self
-            ))),
+            _ => Err(Error::Other(format!("Expected F32, got {:?}", self))),
         }
     }
 }
@@ -477,10 +474,7 @@ impl TryInto<i32> for &HydratedTagValue {
     fn try_into(self) -> Result<i32> {
         match self {
             &HydratedTagValue::I32(val) => Ok(val),
-            _ => Err(Error::Other(format!(
-                "Expected I32, got {:?}",
-                self
-            ))),
+            _ => Err(Error::Other(format!("Expected I32, got {:?}", self))),
         }
     }
 }
@@ -491,10 +485,7 @@ impl TryInto<u64> for &HydratedTagValue {
     fn try_into(self) -> Result<u64> {
         match self {
             &HydratedTagValue::U64(val) => Ok(val),
-            _ => Err(Error::Other(format!(
-                "Expected U64, got {:?}",
-                self
-            ))),
+            _ => Err(Error::Other(format!("Expected U64, got {:?}", self))),
         }
     }
 }
@@ -505,10 +496,7 @@ impl TryInto<u32> for &HydratedTagValue {
     fn try_into(self) -> Result<u32> {
         match self {
             &HydratedTagValue::U32(val) => Ok(val),
-            _ => Err(Error::Other(format!(
-                "Expected U32, got {:?}",
-                self
-            ))),
+            _ => Err(Error::Other(format!("Expected U32, got {:?}", self))),
         }
     }
 }
@@ -519,10 +507,7 @@ impl TryInto<u16> for &HydratedTagValue {
     fn try_into(self) -> Result<u16> {
         match self {
             &HydratedTagValue::U16(val) => Ok(val),
-            _ => Err(Error::Other(format!(
-                "Expected U16, got {:?}",
-                self
-            ))),
+            _ => Err(Error::Other(format!("Expected U16, got {:?}", self))),
         }
     }
 }

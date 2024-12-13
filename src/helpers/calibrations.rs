@@ -2,7 +2,7 @@
 //! See [Labjack documentation](https://support.labjack.com/docs/20-0-internal-flash-t-series-datasheet)
 //! for more info.
 
-use crate::{Result, Error};
+use crate::{Error, Result};
 use derive_builder::Builder;
 
 /// The starting address of internal flash where the calibration constants reside.

@@ -1,7 +1,7 @@
 //! Helper functions for interacting with stream data.
 //! See [Labjack documentation](https://support.labjack.com/docs/3-2-4-low-level-stream-t-series-datasheet)
 
-use crate::{LabjackErrorCode, Result, Error};
+use crate::{Error, LabjackErrorCode, Result};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::Sender;
@@ -26,9 +26,7 @@ pub async fn process_stream(
 
     loop {
         if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut header_buf)).await? {
-            return Err(Error::TokioModbusError(
-                tokio_modbus::Error::Transport(e),
-            ));
+            return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
         }
         #[cfg(debug_assertions)]
         {
@@ -73,9 +71,7 @@ pub async fn process_stream(
                 return Err(Error::from(LabjackErrorCode::StreamScanOverlap));
             }
             Ok(LabjackErrorCode::StreamAutoRecoverEndOverflow) => {
-                return Err(Error::from(
-                    LabjackErrorCode::StreamAutoRecoverEndOverflow,
-                ));
+                return Err(Error::from(LabjackErrorCode::StreamAutoRecoverEndOverflow));
             }
             Ok(LabjackErrorCode::StreamBurstComplete) => {
                 let num_samples_remaining = u16::from_be_bytes([header_buf[14], header_buf[15]]);
@@ -87,9 +83,7 @@ pub async fn process_stream(
                 let mut data_buf = vec![0; num_bytes_remaining as usize];
 
                 if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
-                    return Err(Error::TokioModbusError(
-                        tokio_modbus::Error::Transport(e),
-                    ));
+                    return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
                 }
 
                 // Parse data_bytes into u16 values
@@ -128,9 +122,7 @@ pub async fn process_stream(
         let mut data_buf = vec![0; num_bytes as usize];
 
         if let Err(e) = timeout(timeout_duration, stream.read_exact(&mut data_buf)).await? {
-            return Err(Error::TokioModbusError(
-                tokio_modbus::Error::Transport(e),
-            ));
+            return Err(Error::TokioModbusError(tokio_modbus::Error::Transport(e)));
         }
 
         // Parse data_bytes into u16 values
