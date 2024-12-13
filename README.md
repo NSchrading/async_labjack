@@ -10,17 +10,19 @@ It differentiates itself from `LJM` and other available labjack crates in the ru
 
 * Pure rust. This is not an FFI binding to `LJM`. Instead it uses the [direct modbus TCP](https://support.labjack.com/docs/protocol-details-direct-modbus-tcp) interface of the LabJack.
 
-* Asynchronous!
+* Asynchronous
 
 * Does not require `LJM` installed on your system. As long as you can establish a tcp connection to your LabJack, you can use this library to work with your LabJack.
 
 * Strongly-typed. All registers (tags) that are available on the LabJack have types and read/write specifications in this library. The rust compiler will prevent issues where, for example, you may be attempting to read a write-only register or get a floating point value from a u32 register. This will prevent issues at compile time, rather than waiting to get back errors from the LabJack response at runtime.
 
+* All labjack registers and error codes are defined as constants in this library. See [src/labjack/all_tags.rs] and [src/labjack/errors.rs]. When a labjack error occurs, all functions in this library will attempt to return the descriptive error from the `LAST_ERR_DETAIL` register, which you can match on via the `LabjackErrorCode` enum.
+
 * TCP-only. This library does not support USB connections to the LabJack.
 
 ## Example
 
-Many complete examples, including for streaming, can be found in the [examples] directory.
+Many complete examples, including for streaming, can be found in the [examples/] directory.
 
 ```rust
 use async_labjack::client::LabjackClient;
