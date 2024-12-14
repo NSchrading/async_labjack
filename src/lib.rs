@@ -31,7 +31,7 @@ following ways:
 
 Many complete examples, including for streaming, can be found in the examples/ directory.
 
-```rust
+```ignore
 use async_labjack::client::LabjackClient;
 use async_labjack::{TEST, TEST_FLOAT32, TEST_INT32};
 
