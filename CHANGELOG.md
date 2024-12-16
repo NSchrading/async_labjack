@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Cargo.toml badges and keywords
+- Documentation fix in stream_burst_command_response_mode.rs (600 -> 1200 samples)
 
 
 ## [0.1.0] - 2024-12-14

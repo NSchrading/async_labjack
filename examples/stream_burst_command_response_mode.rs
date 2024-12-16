@@ -21,7 +21,7 @@ async fn main() {
     // command response mode (auto_target = 16) sends data to the STREAM_DATA_CR tag
     // Burst mode (num_scans > 0) ends the scan after that number of scans is produced
     // Scan 300 times, buffering them into packets of 100 samples each.
-    // This will produce a total of 600 values because we are going to stream 2 registers
+    // This will produce a total of 1200 values because we are going to stream 4 registers
     const NUM_SCANS: u32 = 300;
     const NUM_TAGS: u32 = 4;
     const TOTAL_SAMPLES_EXPECTED: u32 = NUM_SCANS * NUM_TAGS;
