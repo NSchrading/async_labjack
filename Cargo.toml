@@ -22,6 +22,7 @@ tokio-modbus = { version = "0.16", default-features = false, features = [
 ] }
 tokio-util = "0.7"
 tracing = { version = "0.1", features = ["log"] }
+udp-stream = { version = "0.0.12" }
 
 [dev-dependencies]
 env_logger = "0.11"

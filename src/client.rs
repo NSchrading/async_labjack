@@ -25,13 +25,14 @@ use std::borrow::Cow;
 use std::iter::zip;
 use std::net::SocketAddr;
 use std::{cmp, io};
-use tokio::net::TcpSocket;
+use tokio::net::{TcpSocket, UdpSocket};
 use tokio::time::{timeout, Duration};
 use tokio_modbus;
 use tokio_modbus::client::{Client, Context};
 use tokio_modbus::prelude::{tcp, ExceptionCode, Request, Response, Writer};
 use tokio_modbus::slave::SlaveContext;
 use tokio_modbus::Slave;
+use udp_stream::UdpStream;
 
 /// The kind of labjack this device is, based on the PRODUCT_ID register.
 #[derive(Debug, Clone, Copy)]
@@ -95,6 +96,25 @@ impl LabjackClient {
             }
         };
         let context = tcp::attach(transport);
+
+        let mut labjack_client = LabjackClient {
+            context,
+            address: socket_addr,
+            command_response_timeout: Duration::from_secs(5),
+            labjack_kind: LabjackKind::T7, // temporarily assign a kind defaulted to T7
+            dropped: false,
+        };
+
+        let actual_kind = labjack_client.get_labjack_kind().await?;
+        labjack_client.labjack_kind = actual_kind;
+
+        Ok(labjack_client)
+    }
+
+    pub async fn connect_socket_udp(socket_addr: SocketAddr) -> Result<Self> {
+        let stream = UdpStream::connect(socket_addr).await.unwrap();
+
+        let context = tcp::attach(stream);
 
         let mut labjack_client = LabjackClient {
             context,
