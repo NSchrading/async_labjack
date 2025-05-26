@@ -1,5 +1,6 @@
 use async_labjack::client::LabjackClient;
 use async_labjack::client::LabjackInteractions;
+use async_labjack::labjack::HydratedTagValue;
 use async_labjack::labjack::StreamConfigBuilder;
 use async_labjack::STREAM_DEBUG_GET_SELF_INDEX;
 use async_labjack::{
@@ -33,50 +34,120 @@ async fn main() {
     let value = TEST_UINT32.read(client).await.unwrap();
     println!("{:?}", value);
 
-    // let mut bytes = BytesMut::with_capacity(12);
-    // bytes.put_u16(1); // transaction id
-    // bytes.put_u16(0); // protocol id
-    // bytes.put_u16(6); // request size (mbfb request below + 1)
-    // bytes.put_u8(255); // unit id
-    // bytes.put_u8(3); // function
+    // Write to a bunch of tags at once
+    client
+        .write_tags(
+            &[
+                TEST_FLOAT32.into(),
+                TEST_INT32.into(),
+                TEST_UINT32.into(),
+                TEST_UINT16.into(),
+            ],
+            &[
+                HydratedTagValue::F32(123.456),
+                HydratedTagValue::I32(123456),
+                HydratedTagValue::U32(123456),
+                HydratedTagValue::U16(12345),
+            ],
+        )
+        .await
+        .unwrap();
 
-    // // mbfb request
-    // bytes.put_u16(TEST_UINT32.address);
-    // bytes.put_u16(2);
-    // let bytes = bytes.freeze();
+    // Read a bunch of tags at once
+    let results = client.read_tags(&[TEST_UINT32.into()]).await.unwrap();
 
-    // let sock = UdpSocket::bind("0.0.0.0:52362").await.unwrap();
+    println!("{:?}", results);
 
-    // let remote_addr = "192.168.42.100:52362";
-    // //sock.connect(remote_addr).await.unwrap();
+    let uint32_val: u32 = (&results[0]).try_into().unwrap();
+    assert_eq!(uint32_val, 123456);
 
-    // let len = sock.send_to(&bytes, remote_addr).await.unwrap(); // Specify destination each time
-    // println!("{:?} bytes sent to {}", len, remote_addr);
+    // Read and write all at once. Writing occurs first so you can see the change from the reads.
+    // let results = client
+    //     .read_write_tags(
+    //         &[
+    //             TEST_FLOAT32.into(),
+    //             TEST_INT32.into(),
+    //             TEST_UINT32.into(),
+    //             TEST_UINT16.into(),
+    //         ],
+    //         &[
+    //             TEST_FLOAT32.into(),
+    //             TEST_INT32.into(),
+    //             TEST_UINT32.into(),
+    //             TEST_UINT16.into(),
+    //         ],
+    //         &[
+    //             HydratedTagValue::F32(-98765.43),
+    //             HydratedTagValue::I32(-987654),
+    //             HydratedTagValue::U32(987654),
+    //             HydratedTagValue::U16(9876),
+    //         ],
+    //     )
+    //     .await
+    //     .unwrap();
 
-    // loop {
-    //     let mut buf = [0; 20];
-    //     match sock.try_recv_from(&mut buf) {
-    //         // Or use blocking recv_from with a timeout
-    //         Ok((len, src_addr)) => {
-    //             println!("{:?} bytes received from {:?}", len, src_addr);
-    //             println!("{:?}", &buf);
-    //             println!(
-    //                 "{:?}",
-    //                 u32::from_be_bytes([buf[9], buf[10], buf[11], buf[12]])
-    //             );
-    //             // break; // Or continue looping
-    //         }
-    //         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-    //             // No data received yet, can add a small delay or continue
-    //             tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-    //             continue;
-    //         }
-    //         Err(e) => {
-    //             eprintln!("Error receiving data: {:?}", e);
-    //             break;
-    //         }
-    //     }
-    // }
+    // let float32_val: f32 = (&results[0]).try_into().unwrap();
+    // assert_eq!(float32_val, -98765.43);
+
+    // let int32_val: i32 = (&results[1]).try_into().unwrap();
+    // assert_eq!(int32_val, -987654);
+
+    // let uint32_val: u32 = (&results[2]).try_into().unwrap();
+    // assert_eq!(uint32_val, 987654);
+
+    // let uint16_val: u16 = (&results[3]).try_into().unwrap();
+    // assert_eq!(uint16_val, 9876);
+
+    println!("Success! Disconnecting...");
+    client.disconnect().await.unwrap();
+
+    let mut bytes = BytesMut::with_capacity(12);
+    bytes.put_u16(1); // transaction id
+    bytes.put_u16(0); // protocol id
+    bytes.put_u16(6); // request size (mbfb request below + 1)
+    bytes.put_u8(255); // unit id
+    bytes.put_u8(76); // function
+
+    // mbfb request
+    bytes.put_u8(0);
+    bytes.put_u16(TEST_UINT32.address);
+    bytes.put_u8(2);
+    let bytes = bytes.freeze();
+
+    println!("{:?}", &bytes[..]);
+
+    let sock = UdpSocket::bind("0.0.0.0:52362").await.unwrap();
+
+    let remote_addr = "192.168.42.100:52362";
+    //sock.connect(remote_addr).await.unwrap();
+
+    let len = sock.send_to(&bytes, remote_addr).await.unwrap(); // Specify destination each time
+    println!("{:?} bytes sent to {}", len, remote_addr);
+
+    loop {
+        let mut buf = [0; 20];
+        match sock.try_recv_from(&mut buf) {
+            // Or use blocking recv_from with a timeout
+            Ok((len, src_addr)) => {
+                println!("{:?} bytes received from {:?}", len, src_addr);
+                println!("{:?}", &buf);
+                println!(
+                    "{:?}",
+                    u32::from_be_bytes([buf[8], buf[9], buf[10], buf[11]])
+                );
+                // break; // Or continue looping
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // No data received yet, can add a small delay or continue
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                continue;
+            }
+            Err(e) => {
+                eprintln!("Error receiving data: {:?}", e);
+                break;
+            }
+        }
+    }
 
     // let value = LAST_ERR_DETAIL.read(client).await.unwrap();
     // println!("{:?}", value);

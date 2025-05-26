@@ -15,12 +15,13 @@ async-trait = "0.1"
 bytes = "1"
 derive_builder = "0.20"
 enum_dispatch = "0.3"
+futures = "0.3"
 thiserror = "2"
 tokio = { version = "1", features = ["time", "rt", "net"] }
-tokio-modbus = { version = "0.16", default-features = false, features = [
+tokio-modbus = { path = "/home/jschrading/.cargo/registry/src/index.crates.io-6f17d22bba15001f/tokio-modbus-0.16.1", default-features = false, features = [
     "tcp",
 ] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["net", "codec"] }
 tracing = { version = "0.1", features = ["log"] }
 udp-stream = { version = "0.0.12" }
 
